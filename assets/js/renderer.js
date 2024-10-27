@@ -19,415 +19,190 @@ function createRoom() {
     room_id = generateRoomId();
     document.getElementById("room-input").value = room_id;
     document.getElementById("room-id-display").textContent = room_id;
-    document.getElementById("current-room-id").style.display = "block";
-    
-    let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
-    rooms.push({ roomId: room_id, createdBy: nickname, participants: [nickname] });
-    localStorage.setItem('rooms', JSON.stringify(rooms));
+    document.getElementById("current-room-id").style.display = " block";
 
-    initializePeer();
+    initPeer();
 }
 
 function joinRoom() {
+    room_id = document.getElementById("room-input").value;
+    if (!room_id) {
+        alert("Lütfen oda ID'sini girin.");
+        return;
+    }
+
     nickname = document.getElementById("nickname-input").value;
     if (!nickname) {
         alert("Lütfen takma adınızı girin.");
         return;
     }
 
-    room_id = document.getElementById("room-input").value;
-    if (!room_id || !/^\d{8,}$/.test(room_id)) {
-        alert("Lütfen geçerli bir oda ID'si girin (en az 8 rakam).");
-        return;
-    }
-
-    let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
-    let room = rooms.find(r => r.roomId === room_id);
-    if (!room) {
-        room = { roomId: room_id, participants: [] };
-        rooms.push(room);
-    }
-
-    room.participants.push(nickname);
-    localStorage.setItem('rooms', JSON.stringify(rooms));
-
-    document.getElementById("room-id-display").textContent = room_id;
-    document.getElementById("current-room-id").style.display = "block";
-    initializePeer();
+    initPeer();
 }
 
-function initializePeer() {
-    peer = new Peer();
-
-    peer.on('open', async (id) => {
-        console.log('My peer ID is: ' + id);
-        try {
-            local_stream = await navigator.mediaDevices.getUserMedia({ 
-                video: true, 
-                audio: true 
-            });
-            addParticipant(nickname, local_stream, id);
-            document.getElementById('leave-room-btn').style.display = 'inline-block';
-
-            // Diğer katılımcılara bağlan
-            let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
-            let currentRoom = rooms.find(r => r.roomId === room_id);
-            if (currentRoom && currentRoom.participants) {
-                currentRoom.participants.forEach(participantNick => {
-                    if (participantNick !== nickname) {
-                        const call = peer.call(participantNick, local_stream, {
-                            metadata: { nickname: nickname }
-                        });
-                        if (call) {
-                            call.on('stream', (remoteStream) => {
-                                addParticipant(participantNick, remoteStream, call.peer);
-                            });
-                        }
-                    }
-                });
-            }
-            updateActiveRooms();
-        } catch (error) {
-            console.error('Medya erişimi hatası:', error);
-            alert('Kamera veya mikrofona erişim sağlanamadı. Lütfen izinleri kontrol edin.');
-        }
+function initPeer() {
+    peer = new Peer(nickname, {
+        host: "localhost",
+        port: 9000,
+        path: "/peerjs",
+        debug: 3
     });
 
-    peer.on('call', async (call) => {
-        try {
-            call.answer(local_stream);
-            call.on('stream', (remoteStream) => {
-                addParticipant(call.metadata.nickname, remoteStream, call.peer);
-            });
-        } catch (error) {
-            console.error('Gelen çağrı hatası:', error);
-        }
+    peer.on("open", (id) => {
+        console.log("Peer connected with id: " + id);
     });
+
+    peer.on("connection", (conn) => {
+        console.log("Connected to: " + conn.peer);
+        connections[conn.peer] = conn;
+        conn.on("data", (data) => {
+            console.log("Received data from: " + conn.peer);
+            handleData(data);
+        });
+    });
+
+    peer.on("call", (call) => {
+        console.log("Received call from: " + call.peer);
+        call.answer(local_stream);
+        call.on("stream", (stream) => {
+            console.log("Received stream from: " + call.peer);
+            handleStream(stream, call.peer);
+        });
+    });
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then((stream) => {
+            local_stream = stream;
+            document.getElementById("leave-room-btn").style.display = "block";
+        })
+        .catch((err) => {
+            console.error("Error getting user media: ", err);
+        });
 }
 
-function addParticipant(name, stream, peerId) {
-    if (participants[peerId]) {
-        participants[peerId].video.srcObject = stream;
-        return;
+function handleData(data) {
+    if (data.type === "chat") {
+        addChatMessage(data.sender, data.message);
+    } else if (data.type === "participant") {
+        addParticipant(data.sender);
+    } else if (data.type === "leave") {
+        removeParticipant(data.sender);
     }
+}
 
-    const container = document.createElement("div");
-    container.className = "col-4 pt-4";
-    container.id = `participant-${peerId}`;
+function handleStream(stream, peer) {
+    addParticipant(peer);
+    addStream(stream, peer);
+}
 
+function addParticipant(peer) {
+    if (!participants[peer]) {
+        participants[peer] = true;
+        const participantElement = document.createElement("div");
+        participantElement.className = "col-md-4";
+        participantElement.innerHTML = `<h5>${peer}</h5>`;
+        document.getElementById("participants-container").appendChild(participantElement);
+    }
+}
+
+function addStream(stream, peer) {
     const videoElement = document.createElement("video");
-    videoElement.autoplay = true;
-    videoElement.playsInline = true;
-    if (peerId === peer.id) videoElement.muted = true;
-    videoElement.height = 200;
-
-    container.innerHTML = `<h5>${name}</h5>`;
-    container.appendChild(videoElement);
-    document.getElementById("participants-container").appendChild(container);
-
     videoElement.srcObject = stream;
-    participants[peerId] = { 
-        video: videoElement, 
-        stream: stream, 
-        name: name 
-    };
+    videoElement.play();
+    videoElement.className = "col-md-4";
+    document.getElementById("participants-container").appendChild(videoElement);
 }
 
-function removeParticipant(peerId) {
-    if (participants[peerId]) {
-        let participantDiv = document.getElementById(`participant-${peerId}`);
-        if (participantDiv) {
-            participantDiv.remove();
-        }
-        delete participants[peerId];
-
-        let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
-        let roomIndex = rooms.findIndex(r => r.roomId === room_id);
-        if (roomIndex !== -1) {
-            rooms[roomIndex].participants = rooms[roomIndex].participants.filter(p => p !== participants[peerId].name);
-            localStorage.setItem('rooms', JSON.stringify(rooms));
+function removeParticipant(peer) {
+    if (participants[peer]) {
+        delete participants[peer];
+        const participantElements = document.getElementById("participants-container").children;
+        for (let i = 0; i < participantElements.length; i++) {
+            if (participantElements[i].textContent === peer) {
+                participantElements[i].remove();
+                break;
+            }
         }
     }
 }
 
-function leaveRoom() {
-    if (peer) {
-        peer.destroy();
-    }
-    if (local_stream) {
-        local_stream.getTracks().forEach(track => track.stop());
-    }
-    if (screenStream) {
-        screenStream.getTracks().forEach(track => track.stop());
-    }
-    document.getElementById('participants-container').innerHTML = '';
-    document.getElementById('leave-room-btn').style.display = 'none';
-    document.getElementById('room-input').value = '';
-    document.getElementById('current-room-id').style.display = 'none';
-    
-    let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
-    let roomIndex = rooms.findIndex(r => r.roomId === room_id);
-    if (roomIndex !== -1) {
-        rooms[roomIndex].participants = rooms[roomIndex].participants.filter(p => p !== nickname);
-        if (rooms[roomIndex].participants.length === 0) {
-            rooms.splice(roomIndex, 1);
-        }
-        localStorage.setItem('rooms', JSON.stringify(rooms));
+function sendChatMessage() {
+    const message = document.getElementById("chat-input").value;
+    if (!message) {
+        return;
     }
 
-    participants = {};
-    connections = {};
-    notify("Odadan ayrıldınız.");
+    document.getElementById("chat-input").value = "";
+    sendData({ type: "chat", message: message });
+}
+
+function sendData(data) {
+    for (let peer in connections) {
+        connections[peer].send(data);
+    }
+}
+
+function toggleScreenShare() {
+    if (!screenSharing) {
+        navigator.mediaDevices.getDisplayMedia({ video: true })
+            .then((stream) => {
+                screenStream = stream;
+                screenSharing = true;
+                document.getElementById("screen-share-btn").textContent = "Ekran Paylaşımını Durdur";
+                sendData({ type: "screen-share", stream: stream });
+            })
+            .catch((err) => {
+                console.error("Error getting display media: ", err);
+            });
+    } else {
+        screenStream.getTracks().forEach((track) => {
+            track.stop();
+        });
+        screenSharing = false;
+        document.getElementById("screen-share-btn").textContent = "Ekran Paylaş";
+    }
 }
 
 function toggleMute() {
-    isMuted = !isMuted;
-    if (local_stream) {
-        local_stream.getAudioTracks().forEach(track => {
-            track.enabled = !isMuted;
-        });
-        document.getElementById("mute-btn").innerHTML = isMuted ? 
-            '<i class="fas fa-microphone-slash"></i> Sesi Aç' : 
-            '<i class="fas fa-microphone"></i> Sesi Kapat';
+    if (!isMuted) {
+        local_stream.getAudioTracks()[0].enabled = false;
+        isMuted = true;
+        document.getElementById("mute-btn").textContent = "Sesi Aç";
+    } else {
+        local_stream.getAudioTracks()[0].enabled = true;
+        isMuted = false;
+        document.getElementById("mute-btn").textContent = "Sesi Kapat";
     }
 }
 
 function toggleCamera() {
-    isCameraOff = !isCameraOff;
-    if (local_stream) {
-        local_stream.getVideoTracks().forEach(track => {
-            track.enabled = !isCameraOff;
-        });
-        document.getElementById("camera-btn").innerHTML = isCameraOff ? 
-            '<i class="fas fa-video-slash"></i> Kamerayı Aç' : 
-            '<i class="fas fa-video"></i> Kamerayı Kapat';
-    }
-}
-
-async function toggleScreenShare() {
-    if (!screenSharing) {
-        try {
-            screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-            screenSharing = true;
-            document.getElementById("screen-share-btn").innerHTML = 
-                '<i class="fas fa-desktop"></i> Ekran Paylaşımını Kapat';
-            if (local_stream) {
-                local_stream.getTracks().forEach(track => track.stop());
-            }
-            local_stream = screenStream;
-            addParticipant(nickname, local_stream, peer.id);
-            notify("Ekran paylaşımı başladı.");
-        } catch (error) {
-            console.error('Ekran paylaşımı hatası:', error);
-            alert('Ekran paylaşımı başlatılamadı. Lütfen izinleri kontrol edin.');
-        }
+    if (!isCameraOff) {
+        local_stream.getVideoTracks()[0].enabled = false;
+        isCameraOff = true;
+        document.getElementById("camera-btn").textContent = "Kamerayı Aç";
     } else {
-        screenSharing = false;
-        if (screenStream) {
-            screenStream.getTracks().forEach(track => track.stop());
-        }
-        document.getElementById("screen-share-btn").innerHTML = 
-            '<i class="fas fa-desktop"></i> Ekran Paylaşımını Aç';
-        notify("Ekran paylaşımı kapatıldı.");
+        local_stream.getVideoTracks()[0].enabled = true;
+        isCameraOff = false;
+        document.getElementById("camera-btn").textContent = "Kamerayı Kapat";
     }
 }
 
-function notify(message) {
-    console.log(message);
-    alert(message);
-}
-
-function updateActiveRooms() {
-    let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
-    let activeRooms = rooms.filter(r => r.participants.length > 0);
-    document.getElementById("active-rooms-list").innerHTML = "";
-    activeRooms.forEach(room => {
-        let roomElement = document.createElement("li");
-        roomElement.textContent = `Oda ID: ${room.roomId} - Katılımcılar: ${room.participants.join(", ")}`;
-        document.getElementById("active-rooms-list").appendChild(roomElement);
+function leaveRoom() {
+    sendData({ type: "leave" });
+    peer.disconnect();
+    peer.destroy();
+    peer = null;
+    local_stream.getTracks().forEach((track) => {
+        track.stop();
     });
+    document.getElementById("leave-room-btn").style.display = "none";
+    document.getElementById("current-room-id").style.display = "none";
 }
 
 function generateRoomId() {
-    return Math.floor(10000000 + Math.random() * 90000000);
+    return Math.floor(Math.random() * 100000000);
 }
-// Peer bağlantı yönetimi
-peer.on('connection', (conn) => {
-    connections[conn.peer] = conn;
-    
-    conn.on('data', (data) => {
-        try {
-            const parsedData = JSON.parse(data);
-            if (parsedData.type === 'chat') {
-                displayChatMessage(parsedData.data);
-            } else if (parsedData.type === 'newParticipant') {
-                handleNewParticipant(parsedData.data);
-            }
-        } catch (error) {
-            console.error('Veri işleme hatası:', error);
-        }
-    });
 
-    conn.on('close', () => {
-        removeParticipant(conn.peer);
-        delete connections[conn.peer];
-        updateActiveRooms();
-    });
+document.getElementById("darkModeToggle").addEventListener("click", () => {
+    document.body.classList.toggle("dark-mode");
 });
-
-// Hata yönetimi
-peer.on('error', (err) => {
-    console.error('Peer bağlantı hatası:', err);
-    notify(`Bağlantı hatası: ${err.type}`);
-});
-
-// Yeni katılımcı işleme
-function handleNewParticipant(data) {
-    if (!participants[data.peerId]) {
-        const call = peer.call(data.peerId, local_stream, {
-            metadata: { nickname: nickname }
-        });
-        
-        call.on('stream', (remoteStream) => {
-            addParticipant(data.name, remoteStream, data.peerId);
-        });
-    }
-}
-
-// Katılımcı durumunu güncelleme
-function updateParticipantStatus(peerId, status) {
-    const participantDiv = document.getElementById(`participant-${peerId}`);
-    if (participantDiv) {
-        const statusIndicator = participantDiv.querySelector('.status-indicator') || 
-            document.createElement('div');
-        statusIndicator.className = `status-indicator ${status}`;
-        statusIndicator.textContent = status;
-        if (!participantDiv.querySelector('.status-indicator')) {
-            participantDiv.appendChild(statusIndicator);
-        }
-    }
-}
-
-// Medya cihazları yönetimi
-async function getAvailableDevices() {
-    try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-        const audioDevices = devices.filter(device => device.kind === 'audioinput');
-        
-        // Cihaz listelerini güncelle
-        updateDeviceList('video-devices', videoDevices);
-        updateDeviceList('audio-devices', audioDevices);
-    } catch (error) {
-        console.error('Cihaz listesi alınamadı:', error);
-    }
-}
-
-function updateDeviceList(elementId, devices) {
-    const select = document.getElementById(elementId);
-    if (select) {
-        select.innerHTML = '';
-        devices.forEach(device => {
-            const option = document.createElement('option');
-            option.value = device.deviceId;
-            option.text = device.label || `Device ${devices.indexOf(device) + 1}`;
-            select.appendChild(option);
-        });
-    }
-}
-
-// Medya cihazı değiştirme
-async function switchMediaDevice(deviceId, kind) {
-    try {
-        const newConstraints = {
-            video: kind === 'video' ? { deviceId: { exact: deviceId } } : local_stream.getVideoTracks()[0].enabled,
-            audio: kind === 'audio' ? { deviceId: { exact: deviceId } } : local_stream.getAudioTracks()[0].enabled
-        };
-
-        const newStream = await navigator.mediaDevices.getUserMedia(newConstraints);
-        
-        if (kind === 'video') {
-            const videoTrack = newStream.getVideoTracks()[0];
-            const oldVideoTrack = local_stream.getVideoTracks()[0];
-            if (oldVideoTrack) {
-                oldVideoTrack.stop();
-                local_stream.removeTrack(oldVideoTrack);
-            }
-            local_stream.addTrack(videoTrack);
-        } else {
-            const audioTrack = newStream.getAudioTracks()[0];
-            const oldAudioTrack = local_stream.getAudioTracks()[0];
-            if (oldAudioTrack) {
-                oldAudioTrack.stop();
-                local_stream.removeTrack(oldAudioTrack);
-            }
-            local_stream.addTrack(audioTrack);
-        }
-
-        // Yerel görüntüyü güncelle
-        updateLocalVideo();
-        
-        // Diğer katılımcılara yeni medya akışını gönder
-        Object.values(peer.connections).forEach(conns => {
-            conns.forEach(conn => {
-                const sender = conn.peerConnection.getSenders().find(s => s.track.kind === kind);
-                if (sender) {
-                    sender.replaceTrack(kind === 'video' ? videoTrack : audioTrack);
-                }
-            });
-        });
-
-    } catch (error) {
-        console.error('Medya cihazı değiştirme hatası:', error);
-        notify('Medya cihazı değiştirilemedi');
-    }
-}
-
-function updateLocalVideo() {
-    if (participants[peer.id]) {
-        participants[peer.id].video.srcObject = local_stream;
-    }
-}
-
-// Bağlantı durumu kontrolü
-function checkConnection() {
-    if (!peer || peer.disconnected) {
-        notify('Bağlantı kesildi. Yeniden bağlanılıyor...');
-        initializePeer();
-    }
-}
-
-// Periyodik bağlantı kontrolü
-setInterval(checkConnection, 5000);
-
-// Sayfa yüklendiğinde
-window.addEventListener('load', () => {
-    getAvailableDevices();
-    
-    // Enter tuşu ile mesaj gönderme
-    document.getElementById('chat-input').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            sendChatMessage();
-        }
-    });
-
-    // Sayfa kapatıldığında odadan çıkış
-    window.addEventListener('beforeunload', () => {
-        leaveRoom();
-    });
-});
-
-// Ekran paylaşımı durumunu kontrol et
-document.addEventListener('visibilitychange', () => {
-    if (document.hidden && screenSharing) {
-        toggleScreenShare();
-    }
-});
-
-// Medya cihazı değişikliklerini dinle
-navigator.mediaDevices.addEventListener('devicechange', () => {
-    getAvailableDevices();
-});
-
-// Aktif odaları periyodik olarak güncelle
-setInterval(updateActiveRooms, 5000);
