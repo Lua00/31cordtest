@@ -9,38 +9,40 @@ let participants = {};
 let isMuted = false;
 let isCameraOff = false;
 
-async function createRoom() {
+function createRoom() {
     nickname = document.getElementById("nickname-input").value;
     if (!nickname) {
         alert("Lütfen takma adınızı girin.");
         return;
     }
 
-    try {
-        const response = await fetch('/api/rooms', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ nickname: nickname }),
-        });
-        const data = await response.json();
+    room_id = generateRoomId();
+    document.getElementById("room-input").value = room_id;
+    document.getElementById("room-id-display").textContent = room_id;
+    document.getElementById("current-room-id").style.display = "block";
+    
+    fetch('/api/rooms', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ roomId: room_id, nickname: nickname }),
+    })
+    .then(response => response.json())
+    .then(data => {
         if (data.success) {
-            room_id = data.roomId;
-            document.getElementById("room-input").value = room_id;
-            document.getElementById("room-id-display").textContent = room_id;
-            document.getElementById("current-room-id").style.display = "block";
             initializePeer(room_id);
         } else {
             alert("Oda oluşturulamadı. Lütfen tekrar deneyin.");
         }
-    } catch (error) {
+    })
+    .catch(error => {
         console.error('Oda oluşturma hatası:', error);
         alert("Oda oluşturulurken bir hata oluştu. Lütfen tekrar deneyin.");
-    }
+    });
 }
 
-async function joinRoom() {
+function joinRoom() {
     nickname = document.getElementById("nickname-input").value;
     if (!nickname) {
         alert("Lütfen takma adınızı girin.");
@@ -48,20 +50,20 @@ async function joinRoom() {
     }
 
     room_id = document.getElementById("room-input").value;
-    if (!room_id || !/^\w{8}$/.test(room_id)) {
-        alert("Lütfen geçerli bir oda ID'si girin (8 karakter).");
+    if (!room_id || !/^\d{8,}$/.test(room_id)) {
+        alert("Lütfen geçerli bir oda ID'si girin (en az 8 rakam).");
         return;
     }
 
-    try {
-        const response = await fetch('/api/rooms/join', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ roomId: room_id, nickname: nickname }),
-        });
-        const data = await response.json();
+    fetch('/api/rooms/join', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ roomId: room_id, nickname: nickname }),
+    })
+    .then(response => response.json())
+    .then(data => {
         if (data.success) {
             document.getElementById("room-id-display").textContent = room_id;
             document.getElementById("current-room-id").style.display = "block";
@@ -69,10 +71,11 @@ async function joinRoom() {
         } else {
             alert("Odaya katılınamadı. Lütfen geçerli bir oda ID'si girdiğinizden emin olun.");
         }
-    } catch (error) {
+    })
+    .catch(error => {
         console.error('Odaya katılma hatası:', error);
         alert("Odaya katılırken bir hata oluştu. Lütfen tekrar deneyin.");
-    }
+    });
 }
 
 function initializePeer() {
@@ -82,6 +85,7 @@ function initializePeer() {
         console.log('My peer ID is: ' + id);
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            local_stream = stream;
             addParticipant(nickname, stream, id);
             document.getElementById('leave-room-btn').style.display = 'inline-block';
             updateActiveRooms();
@@ -96,8 +100,7 @@ function initializePeer() {
 
 async function handleIncomingCall(call) {
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        call.answer(stream);
+        call.answer(local_stream);
         call.on('stream', (remoteStream) => {
             addParticipant(call.metadata.nickname, remoteStream, call.peer);
         });
@@ -145,7 +148,7 @@ function removeParticipant(peerId) {
     }
 }
 
-async function leaveRoom() {
+function leaveRoom() {
     if (peer) {
         peer.destroy();
     }
@@ -159,14 +162,14 @@ async function leaveRoom() {
     document.getElementById('leave-room-btn').style.display = 'none';
     document.getElementById('room-input').value = '';
     document.getElementById('current-room-id').style.display = 'none';
-
-    try {
-        await fetch(`/api/participants/${room_id}/${peer.id}`, {
-            method: 'DELETE'
-        });
-    } catch (error) {
-        console.error('Odadan ayrılma hatası:', error);
-    }
+    
+    fetch(`/api/rooms/${room_id}/leave`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ nickname: nickname }),
+    }).catch(error => console.error('Odadan ayrılma hatası:', error));
 
     participants = {};
     connections = {};
@@ -182,14 +185,17 @@ function notify(msg) {
     }, 3000);
 }
 
-async function updateActiveRooms() {
-    try {
-        const response = await fetch('/api/rooms');
-        const rooms = await response.json();
-        updateActiveRoomsList(rooms);
-    } catch (error) {
-        console.error('Aktif odaları getirme hatası:', error);
-    }
+function generateRoomId() {
+    return Math.floor(10000000 + Math.random() * 90000000).toString();
+}
+
+function updateActiveRooms() {
+    fetch('/api/rooms')
+        .then(response => response.json())
+        .then(rooms => {
+            updateActiveRoomsList(rooms);
+        })
+        .catch(error => console.error('Aktif odaları getirme hatası:', error));
 }
 
 function updateActiveRoomsList(rooms) {
@@ -227,8 +233,8 @@ function toggleMute() {
         local_stream.getAudioTracks().forEach(track => {
             track.enabled = !isMuted;
         });
-        document.getElementById("mute-btn").innerHTML = isMuted ?
-            '<i class="fas fa-microphone-slash"></i> Sesi Aç' :
+        document.getElementById("mute-btn").innerHTML = isMuted ? 
+            '<i class="fas fa-microphone-slash"></i> Sesi Aç' : 
             '<i class="fas fa-microphone"></i> Sesi Kapat';
     }
 }
@@ -239,8 +245,8 @@ function toggleCamera() {
         local_stream.getVideoTracks().forEach(track => {
             track.enabled = !isCameraOff;
         });
-        document.getElementById("camera-btn").innerHTML = isCameraOff ?
-            '<i class="fas fa-video-slash"></i> Kamerayı Aç' :
+        document.getElementById("camera-btn").innerHTML = isCameraOff ? 
+            '<i class="fas fa-video-slash"></i> Kamerayı Aç' : 
             '<i class="fas fa-video"></i> Kamerayı Kapat';
     }
 }
@@ -261,9 +267,7 @@ async function toggleScreenShare() {
     } else {
         screenStream.getTracks().forEach(track => track.stop());
         for (let conn of Object.values(connections)) {
-            const sender =
-
-                conn.peerConnection.getSenders().find(s => s.track.kind === 'video');
+            const sender = conn.peerConnection.getSenders().find(s => s.track.kind === 'video');
             sender.replaceTrack(local_stream.getVideoTracks()[0]);
         }
         screenSharing = false;
