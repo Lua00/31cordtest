@@ -186,11 +186,15 @@ function initConnectionListeners() {
             console.log(`Yeni katılımcı bağlandı: ${conn.peer}`);
             
             conn.on('data', (data) => {
-                const parsedData = JSON.parse(data);
-                if (parsedData.type === 'chat') {
-                    displayChatMessage(parsedData.data);
-                } else if (parsedData.type === 'activeRooms') {
-                    updateActiveRoomsList(parsedData.rooms);
+                try {
+                    const parsedData = JSON.parse(data);
+                    if (parsedData.type === 'chat') {
+                        displayChatMessage(parsedData.data);
+                    } else if (parsedData.type === 'activeRooms') {
+                        updateActiveRoomsList(parsedData.rooms);
+                    }
+                } catch (error) {
+                    console.error('Veri işleme hatası:', error);
                 }
             });
         });
@@ -280,20 +284,31 @@ function updateActiveRoomsList(rooms) {
 
 function updateActiveRooms() {
     if (peer && peer.connections) {
-        const activeRooms = Object.keys(peer.connections).map(peerId => ({
-            id: peerId,
-            participants: Object.keys(peer.connections[peerId]).length + 1
-        }));
+        const activeRooms = [];
+        for (const [peerId, conns] of Object.entries(peer.connections)) {
+            if (Array.isArray(conns) && conns.length > 0) {
+                activeRooms.push({
+                    id: peerId,
+                    participants: conns.length + 1
+                });
+            }
+        }
         updateActiveRoomsList(activeRooms);
 
         // Aktif odaları diğer katılımcılara gönder
-        Object.values(peer.connections).forEach(conns => {
-            conns.forEach(conn => {
-                if (conn.open && typeof conn.send === 'function') {
-                    conn.send(JSON.stringify({ type: 'activeRooms', rooms: activeRooms }));
+        for (const conns of Object.values(peer.connections)) {
+            if (Array.isArray(conns)) {
+                for (const conn of conns) {
+                    if (conn.open && typeof conn.send === 'function') {
+                        try {
+                            conn.send(JSON.stringify({ type: 'activeRooms', rooms: activeRooms }));
+                        } catch (error) {
+                            console.error('Veri gönderme hatası:', error);
+                        }
+                    }
                 }
-            });
-        });
+            }
+        }
     }
 }
 
@@ -314,3 +329,60 @@ if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').match
 } else {
     body.classList.add('light-mode');
 }
+
+// Chat fonksiyonları
+function sendChatMessage() {
+    const chatInput = document.getElementById('chat-input');
+    const message = chatInput.value.trim();
+    if (message) {
+        const chatMessage = {
+            sender: nickname,
+            message: message,
+            timestamp: new Date().toISOString()
+        };
+        displayChatMessage(chatMessage);
+        chatInput.value = '';
+
+        if (peer && peer.connections) {
+            Object.values(peer.connections).forEach(conns => {
+                conns.forEach(conn => {
+                    if (conn.open && typeof conn.send === 'function') {
+                        try {
+                            conn.send(JSON.stringify({ type: 'chat', data: chatMessage }));
+                        } catch (error) {
+                            console.error('Sohbet mesajı gönderme hatası:', error);
+                        }
+                    }
+                });
+            });
+        }
+    }
+}
+
+function displayChatMessage(chatMessage) {
+    const chatMessagesDiv = document.getElementById('chat-messages');
+    const messageElement = document.createElement('div');
+    messageElement.className = 'chat-message';
+    messageElement.innerHTML = `
+        <span class="sender">${chatMessage.sender}:</span>
+        <span class="message">${escapeHtml(chatMessage.message)}</span>
+        <span class="timestamp">${new Date(chatMessage.timestamp).toLocaleTimeString()}</span>
+    `;
+    chatMessagesDiv.appendChild(messageElement);
+    chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+}
+
+function escapeHtml(unsafe) {
+    return unsafe
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+}
+
+document.getElementById('chat-input').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        sendChatMessage();
+    }
+});
