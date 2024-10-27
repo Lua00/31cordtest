@@ -1,5 +1,3 @@
-const { MongoClient } = require('mongodb');
-
 let room_id;
 let local_stream;
 let screenStream;
@@ -10,19 +8,6 @@ let nickname = "";
 let participants = {};
 let isMuted = false;
 let isCameraOff = false;
-
-// MongoDB bağlantı URL'si
-const mongoUrl = 'mongodb+srv://14at558:sU55mLitfA3WDwkx@31cord.fvq5d.mongodb.net/?retryWrites=true&w=majority&appName=31CORD';
-const dbName = '31CORD';
-let db;
-
-// MongoDB'ye bağlan
-MongoClient.connect(mongoUrl, { useUnifiedTopology: true })
-  .then(client => {
-    console.log('MongoDB\'ye başarıyla bağlandı');
-    db = client.db(dbName);
-  })
-  .catch(error => console.error('MongoDB bağlantı hatası:', error));
 
 async function createRoom() {
     nickname = document.getElementById("nickname-input").value;
@@ -36,16 +21,22 @@ async function createRoom() {
     document.getElementById("room-id-display").textContent = room_id;
     document.getElementById("current-room-id").style.display = "block";
     
-    // Odayı MongoDB'ye kaydet
     try {
-        await db.collection('rooms').insertOne({ 
-            roomId: room_id, 
-            createdBy: nickname,
-            createdAt: new Date()
+        const response = await fetch('/api/rooms', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ roomId: room_id, createdBy: nickname }),
         });
+        if (!response.ok) {
+            throw new Error('Oda oluşturma başarısız oldu');
+        }
         console.log('Oda başarıyla kaydedildi');
     } catch (error) {
         console.error('Oda kaydedilirken hata oluştu:', error);
+        alert('Oda oluşturulurken bir hata oluştu. Lütfen tekrar deneyin.');
+        return;
     }
 
     initializePeer(room_id);
@@ -64,9 +55,12 @@ async function joinRoom() {
         return;
     }
 
-    // Odanın varlığını kontrol et
     try {
-        const room = await db.collection('rooms').findOne({ roomId: room_id });
+        const response = await fetch(`/api/rooms/${room_id}`);
+        if (!response.ok) {
+            throw new Error('Oda bulunamadı');
+        }
+        const room = await response.json();
         if (!room) {
             alert("Bu ID'ye sahip bir oda bulunamadı.");
             return;
@@ -82,7 +76,35 @@ async function joinRoom() {
     initializePeer();
 }
 
-// ... (diğer fonksiyonlar aynı kalacak)
+async function initializePeer() {
+    peer = new Peer();
+
+    peer.on('open', async (id) => {
+        console.log('My peer ID is: ' + id);
+        try {
+            await addParticipant(nickname, await navigator.mediaDevices.getUserMedia({ video: true, audio: true }), id);
+            document.getElementById('leave-room-btn').style.display = 'inline-block';
+            updateActiveRooms();
+        } catch (error) {
+            console.error('Medya erişimi hatası:', error);
+            alert('Kamera veya mikrofona erişim sağlanamadı. Lütfen izinleri kontrol edin.');
+        }
+    });
+
+    peer.on('call', handleIncomingCall);
+}
+
+async function handleIncomingCall(call) {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        call.answer(stream);
+        call.on('stream', (remoteStream) => {
+            addParticipant(call.metadata.nickname, remoteStream, call.peer);
+        });
+    } catch (error) {
+        console.error('Gelen çağrı hatası:', error);
+    }
+}
 
 async function addParticipant(name, stream, peerId) {
     console.log(`Adding participant: ${name}, PeerID: ${peerId}`);
@@ -104,13 +126,17 @@ async function addParticipant(name, stream, peerId) {
     console.log(`Participant added: ${name}, PeerID: ${peerId}`);
     console.log("Current participants:", Object.keys(participants));
 
-    // Katılımcıyı MongoDB'ye kaydet
     try {
-        await db.collection('participants').insertOne({
-            roomId: room_id,
-            peerId: peerId,
-            name: name,
-            joinedAt: new Date()
+        await fetch('/api/participants', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                roomId: room_id,
+                peerId: peerId,
+                name: name
+            }),
         });
         console.log('Katılımcı başarıyla kaydedildi');
     } catch (error) {
@@ -130,9 +156,10 @@ async function removeParticipant(peerId) {
         console.log(`Participant removed: ${peerId}`);
         console.log("Current participants:", Object.keys(participants));
 
-        // Katılımcıyı MongoDB'den sil
         try {
-            await db.collection('participants').deleteOne({ roomId: room_id, peerId: peerId });
+            await fetch(`/api/participants/${room_id}/${peerId}`, {
+                method: 'DELETE',
+            });
             console.log('Katılımcı başarıyla silindi');
         } catch (error) {
             console.error('Katılımcı silinirken hata oluştu:', error);
@@ -155,9 +182,10 @@ async function leaveRoom() {
     document.getElementById('room-input').value = '';
     document.getElementById('current-room-id').style.display = 'none';
     
-    // Odadan ayrılan kullanıcıyı MongoDB'den sil
     try {
-        await db.collection('participants').deleteOne({ roomId: room_id, peerId: peer.id });
+        await fetch(`/api/participants/${room_id}/${peer.id}`, {
+            method: 'DELETE',
+        });
         console.log('Kullanıcı odadan başarıyla ayrıldı');
     } catch (error) {
         console.error('Kullanıcı odadan ayrılırken hata oluştu:', error);
@@ -168,125 +196,56 @@ async function leaveRoom() {
     notify("Odadan ayrıldınız.");
 }
 
+function notify(msg) {
+    let notification = document.getElementById("notification");
+    notification.innerHTML = msg;
+    notification.hidden = false;
+    setTimeout(() => {
+        notification.hidden = true;
+    }, 3000);
+}
+
+function generateRoomId() {
+    return Math.floor(10000000 + Math.random() * 90000000).toString();
+}
+
 async function updateActiveRooms() {
-    if (peer && connections) {
-        try {
-            const rooms = await db.collection('rooms').aggregate([
-                {
-                    $lookup: {
-                        from: 'participants',
-                        localField: 'roomId',
-                        foreignField: 'roomId',
-                        as: 'participants'
-                    }
-                },
-                {
-                    $project: {
-                        id: '$roomId',
-                        participants: { $size: '$participants' }
-                    }
-                }
-            ]).toArray();
-
-            updateActiveRoomsList(rooms);
-
-            for (const conn of Object.values(connections)) {
-                if (conn.open) {
-                    try {
-                        conn.send(JSON.stringify({ type: 'activeRooms', rooms: rooms }));
-                    } catch (error) {
-                        console.error('Veri gönderme hatası:', error);
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Aktif odaları güncellerken hata oluştu:', error);
-        }
+    try {
+        const response = await fetch('/api/rooms');
+        const rooms = await response.json();
+        updateActiveRoomsList(rooms);
+    } catch (error) {
+        console.error('Aktif odaları güncellerken hata oluştu:', error);
     }
 }
 
-// Chat fonksiyonları
-async function sendChatMessage() {
-    const chatInput = document.getElementById('chat-input');
-    const message = chatInput.value.trim();
-    if (message) {
-        const chatMessage = {
-            sender: nickname,
-            message: message,
-            timestamp: new Date().toISOString()
-        };
-        displayChatMessage(chatMessage);
-        
-        chatInput.value = '';
-
-        // Mesajı MongoDB'ye kaydet
-        try {
-            await db.collection('messages').insertOne({
-                roomId: room_id,
-                ...chatMessage
-            });
-            console.log('Mesaj başarıyla kaydedildi');
-        } catch (error) {
-            console.error('Mesaj kaydedilirken hata oluştu:', error);
-        }
-
-        for (const conn of Object.values(connections)) {
-            if (conn.open) {
-                try {
-                    conn.send(JSON.stringify({ type: 'chat', data: chatMessage }));
-                } catch (error) {
-                    console.error('Sohbet mesajı gönderme hatası:', error);
-                }
-            }
-        }
-    }
+function updateActiveRoomsList(rooms) {
+    const activeRoomsList = document.getElementById('active-rooms-list');
+    activeRoomsList.innerHTML = '';
+    rooms.forEach(room => {
+        const listItem = document.createElement('li');
+        listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
+        listItem.innerHTML = `
+            ${room.roomId}
+            <span class="badge bg-primary rounded-pill">${room.participants.length} katılımcı</span>
+            <button class="btn btn-sm btn-outline-primary" onclick="joinRoom('${room.roomId}')">Katıl</button>
+        `;
+        activeRoomsList.appendChild(listItem);
+    });
 }
 
-// Diğer fonksiyonlar aynı kalacak...
+const darkModeToggle = document.getElementById('darkModeToggle');
+const body = document.body;
 
-// Her 5 saniyede bir aktif odaları güncelle
-setInterval(updateActiveRooms, 5000);
+darkModeToggle.addEventListener('click', () => {
+    body.classList.toggle('dark-mode');
+    body.classList.toggle('light-mode');
+});
 
-        conn.on('close', () => {
-            removeParticipant(conn.peer);
-            delete connections[conn.peer];
-        });
-
-function handleIncomingData(data, senderId) {
-    switch (data.type) {
-        case 'chat':
-            displayChatMessage(data.data);
-            break;
-        case 'newParticipant':
-            if (!participants[data.data.peerId]) {
-                const call = peer.call(data.data.peerId, screenSharing ? screenStream : local_stream, { metadata: { nickname, peerId: peer.id } });
-                handleOutgoingCall(call);
-            }
-            break;
-        case 'participantInfo':
-            data.data.forEach(participant => {
-                if (!participants[participant.peerId] && participant.peerId !== peer.id) {
-                    const call = peer.call(participant.peerId, screenSharing ? screenStream : local_stream, { metadata: { nickname, peerId: peer.id } });
-                    handleOutgoingCall(call);
-                }
-            });
-            break;
-        case 'activeRooms':
-            updateActiveRoomsList(data.rooms);
-            break;
-    }
-}
-
-function removeParticipant(peerId) {
-    if (participants[peerId]) {
-        let participantDiv = document.getElementById(`participant-${peerId}`);
-        if (participantDiv) {
-            participantDiv.remove();
-        }
-        delete participants[peerId];
-        console.log(`Participant removed: ${peerId}`);
-        console.log("Current participants:", Object.keys(participants));
-    }
+if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    body.classList.add('dark-mode');
+} else {
+    body.classList.add('light-mode');
 }
 
 function toggleMute() {
@@ -313,138 +272,29 @@ function toggleCamera() {
     }
 }
 
-function leaveRoom() {
-    if (peer) {
-        peer.destroy();
-    }
-    if (local_stream) {
-        local_stream.getTracks().forEach(track => track.stop());
-    }
-    if (screenStream) {
+async function toggleScreenShare() {
+    if (!screenSharing) {
+        try {
+            screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            for (let conn of Object.values(connections)) {
+                const sender = conn.peerConnection.getSenders().find(s => s.track.kind === 'video');
+                sender.replaceTrack(screenStream.getVideoTracks()[0]);
+            }
+            screenSharing = true;
+            document.getElementById("screen-share-btn").innerHTML = '<i class="fas fa-desktop"></i> Ekran Paylaşımını Durdur';
+        } catch (e) {
+            console.error("Ekran paylaşımı başlatılamadı:", e);
+        }
+    } else {
         screenStream.getTracks().forEach(track => track.stop());
-    }
-    document.getElementById('participants-container').innerHTML = '';
-    document.getElementById('leave-room-btn').style.display = 'none';
-    document.getElementById('room-input').value = '';
-    document.getElementById('current-room-id').style.display = 'none';
-    participants = {};
-    connections = {};
-    notify("Odadan ayrıldınız.");
-}
-
-function notify(msg) {
-    let notification = document.getElementById("notification");
-    notification.innerHTML = msg;
-    notification.hidden = false;
-    setTimeout(() => {
-        notification.hidden = true;
-    }, 3000);
-}
-
-function generateRoomId() {
-    return Math.floor(10000000 + Math.random() * 90000000).toString();
-}
-
-function updateActiveRoomsList(rooms) {
-    const activeRoomsList = document.getElementById('active-rooms-list');
-    activeRoomsList.innerHTML = '';
-    rooms.forEach(room => {
-        const listItem = document.createElement('li');
-        listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
-        listItem.innerHTML = `
-            ${room.id}
-            <span class="badge bg-primary rounded-pill">${room.participants} katılımcı</span>
-            <button class="btn btn-sm btn-outline-primary" onclick="sendJoinRequest('${room.id}')">Katıl</button>
-        `;
-        activeRoomsList.appendChild(listItem);
-    });
-}
-
-function updateActiveRooms() {
-    if (peer && connections) {
-        const activeRooms = [{
-            id: room_id,
-            participants: Object.keys(participants).length
-        }];
-        updateActiveRoomsList(activeRooms);
-
-        for (const conn of Object.values(connections)) {
-            if (conn.open) {
-                try {
-                    conn.send(JSON.stringify({ type: 'activeRooms', rooms: activeRooms }));
-                } catch (error) {
-                    console.error('Veri gönderme hatası:', error);
-                }
-            }
+        for (let conn of Object.values(connections)) {
+            const sender = conn.peerConnection.getSenders().find(s => s.track.kind === 'video');
+            sender.replaceTrack(local_stream.getVideoTracks()[0]);
         }
+        screenSharing = false;
+        document.getElementById("screen-share-btn").innerHTML = '<i class="fas fa-desktop"></i> Ekran Paylaş';
     }
 }
 
+// Her 5 saniyede bir aktif odaları güncelle
 setInterval(updateActiveRooms, 5000);
-
-const darkModeToggle = document.getElementById('darkModeToggle');
-const body = document.body;
-
-darkModeToggle.addEventListener('click', () => {
-    body.classList.toggle('dark-mode');
-    body.classList.toggle('light-mode');
-});
-
-if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    body.classList.add('dark-mode');
-} else {
-    body.classList.add('light-mode');
-}
-
-function sendChatMessage() {
-    const chatInput = document.getElementById('chat-input');
-    const message = chatInput.value.trim();
-    if (message) {
-        const chatMessage = {
-            sender: nickname,
-            message: message,
-            timestamp: new Date().toISOString()
-        };
-        displayChatMessage(chatMessage);
-        
-        chatInput.value = '';
-
-        for (const conn of Object.values(connections)) {
-            if (conn.open) {
-                try {
-                    conn.send(JSON.stringify({ type: 'chat', data: chatMessage }));
-                } catch (error) {
-                    console.error('Sohbet mesajı gönderme hatası:', error);
-                }
-            }
-        }
-    }
-}
-
-function displayChatMessage(chatMessage) {
-    const chatMessagesDiv = document.getElementById('chat-messages');
-    const messageElement = document.createElement('div');
-    messageElement.className = 'chat-message';
-    messageElement.innerHTML = `
-        <span class="sender">${chatMessage.sender}:</span>
-        <span class="message">${escapeHtml(chatMessage.message)}</span>
-        <span class="timestamp">${new Date(chatMessage.timestamp).toLocaleTimeString()}</span>
-    `;
-    chatMessagesDiv.appendChild(messageElement);
-    chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
-}
-
-function escapeHtml(unsafe) {
-    return unsafe
-         .replace(/&/g, "&amp;")
-         .replace(/</g, "&lt;")
-         .replace(/>/g, "&gt;")
-         .replace(/"/g, "&quot;")
-         .replace(/'/g, "&#039;");
-}
-
-document.getElementById('chat-input').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') {
-        sendChatMessage();
-    }
-});
