@@ -1,72 +1,33 @@
-body {
-    font-family: Arial, sans-serif;
-    background-color: #f5f5f5;
-    transition: background-color 0.5s;
-}
-
+/* Dark mode styles */
 body.dark-mode {
-    background-color: #333;
-}
-
-.navbar {
-    background-color: #333;
+    background-color: #1a1a1a;
     color: #fff;
 }
 
-.navbar-brand {
+body.dark-mode .card {
+    background-color: #2c2c2c;
     color: #fff;
 }
 
-.card {
+body.dark-mode .navbar {
+    background-color: #2c2c2c;
+}
+
+body.dark-mode .form-control {
+    background-color: #333;
+    color: #fff;
+    border-color: #444;
+}
+
+body.light-mode {
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+body.light-mode .card {
     background-color: #fff;
-    border: none;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
 }
 
-.card-body {
-    padding: 20px;
-}
-
-.card-title {
-    margin-bottom: 10px;
-}
-
-.form-control {
-    margin-bottom: 10px;
-}
-
-.btn-modern {
-    padding: 10px 20px;
-    border: none;
-    border-radius: 10px;
-    background-color: #337ab7;
-    color: #fff;
-    cursor: pointer;
-}
-
-.btn-modern:hover {
-    background-color: #23527c;
-}
-
-#participants-container {
-    padding: 20px;
-}
-
-.participant {
-    margin-bottom: 20px;
-}
-
-.video-container {
-    position: relative;
-    padding-bottom: 56.25%;
-    height: 0;
-    overflow: hidden;
-}
-
-.video-container iframe {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+body.light-mode .navbar {
+    background-color: #fff;
 }
