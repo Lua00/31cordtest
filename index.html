@@ -56,6 +56,26 @@
 
                 <div class="card mb-4">
                     <div class="card-body">
+                        <h5 class="card-title">Medya Cihazları</h5>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="video-devices">Kamera</label>
+                                <select class="form-control" id="video-devices" onchange="switchMediaDevice(this.value, 'video')">
+                                    <!-- Kamera cihazları listesi burada görünecek -->
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="audio-devices">Mikrofon</label>
+                                <select class="form-control" id="audio-devices" onchange="switchMediaDevice(this.value, 'audio')">
+                                    <!-- Mikrofon cihazları listesi burada görünecek -->
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-body">
                         <h5 class="card-title">Kontroller</h5>
                         <div class="row mb-3">
                             <div class="col-auto">
@@ -114,7 +134,11 @@
         crossorigin="anonymous"></script>
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <script src="assets/js/renderer.js"></script>
-    <script src="assets/js/chat.js"></script>
+    <script src="assets/js/chat.js"></ script>
+    <script src="assets/js/room.js"></script>
+    <script src="assets/js/participant.js"></script>
+    <script src="assets/js/utils.js"></script>
+    <script src="assets/js/index.js"></script>
 </body>
 
 </html>
