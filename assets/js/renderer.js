@@ -12,8 +12,8 @@ let isMuted = false;
 let isCameraOff = false;
 
 // MongoDB bağlantı URL'si
-const mongoUrl = 'mongodb://localhost:27017';
-const dbName = 'psychordDB';
+const mongoUrl = 'mongodb+srv://14at558:sU55mLitfA3WDwkx@31cord.fvq5d.mongodb.net/?retryWrites=true&w=majority&appName=31CORD';
+const dbName = '31CORD';
 let db;
 
 // MongoDB'ye bağlan
