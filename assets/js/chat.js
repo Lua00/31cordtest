@@ -1,6 +1,6 @@
 let chatMessages = [];
 
-async function sendChatMessage() {
+function sendChatMessage() {
     const chatInput = document.getElementById('chat-input');
     const message = chatInput.value.trim();
     if (message) {
@@ -13,18 +13,10 @@ async function sendChatMessage() {
         displayChatMessage(chatMessage);
         chatInput.value = '';
 
-        try {
-            await fetch(`/api/messages/${room_id}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(chatMessage),
-            });
-            console.log('Mesaj başarıyla kaydedildi');
-        } catch (error) {
-            console.error('Mesaj kaydedilirken hata oluştu:', error);
-        }
+        // Mesajı yerel depolamaya kaydet
+        let roomMessages = JSON.parse(localStorage.getItem(`messages_${room_id}`) || '[]');
+        roomMessages.push(chatMessage);
+        localStorage.setItem(`messages_${room_id}`, JSON.stringify(roomMessages));
 
         if (peer && peer.connections) {
             Object.values(peer.connections).forEach(conns => {
@@ -79,20 +71,15 @@ function initChatListeners(connection) {
     });
 }
 
-async function loadChatHistory() {
-    try {
-        const response = await fetch(`/api/messages/${room_id}`);
-        const messages = await response.json();
-        messages.forEach(displayChatMessage);
-    } catch (error) {
-        console.error('Sohbet geçmişi yüklenirken hata oluştu:', error);
+function loadChatHistory() {
+    if (room_id) {
+        let roomMessages = JSON.parse(localStorage.getItem(`messages_${room_id}`) || '[]');
+        roomMessages.forEach(displayChatMessage);
     }
 }
 
 // Odaya katıldıktan sonra sohbet geçmişini yükle
-document.addEventListener('DOMContentLoaded',
-
- () => {
+document.addEventListener('DOMContentLoaded', () => {
     if (room_id) {
         loadChatHistory();
     }
