@@ -179,7 +179,8 @@ function initConnectionListeners() {
                 const parsedData = JSON.parse(data);
                 if (parsedData.type === 'chat') {
                     displayChatMessage(parsedData.data);
-                
+                } else if (parsedData.type === 'activeRooms') {
+                    updateActiveRoomsList(parsedData.rooms);
                 }
             });
         });
@@ -274,6 +275,15 @@ function updateActiveRooms() {
             participants: Object.keys(peer.connections[peerId]).length + 1
         }));
         updateActiveRoomsList(activeRooms);
+
+        // Aktif odaları diğer katılımcılara gönder
+        Object.values(peer.connections).forEach(conns => {
+            conns.forEach(conn => {
+                if (conn.open) {
+                    conn.send(JSON.stringify({ type: 'activeRooms', rooms: activeRooms }));
+                }
+            });
+        });
     }
 }
 
