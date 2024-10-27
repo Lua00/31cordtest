@@ -1,13 +1,4 @@
-let room_id;
-let local_stream;
-let screenStream;
-let peer = null;
-let connections = {};
-let screenSharing = false;
-let nickname = "";
-let participants = {};
-let isMuted = false;
-let isCameraOff = false;
+// renderer.js
 
 function createRoom() {
     nickname = document.getElementById("nickname-input").value;
@@ -25,7 +16,7 @@ function createRoom() {
     rooms.push({ roomId: room_id, createdBy: nickname, participants: [nickname] });
     localStorage.setItem('rooms', JSON.stringify(rooms));
 
-    initializePeer(room_id);
+    initializePeer(true); // Oda oluşturan için true parametresi
 }
 
 function joinRoom() {
@@ -43,28 +34,49 @@ function joinRoom() {
 
     let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
     let room = rooms.find(r => r.roomId === room_id);
+    
+    // Oda kontrolü kaldırıldı
     if (!room) {
-        alert("Bu ID'ye sahip bir oda bulunamadı.");
-        return;
+        room = { roomId: room_id, participants: [] };
+        rooms.push(room);
     }
 
-    room.participants.push(nickname);
-    localStorage.setItem('rooms', JSON.stringify(rooms));
+    if (!room.participants.includes(nickname)) {
+        room.participants.push(nickname);
+        localStorage.setItem('rooms', JSON.stringify(rooms));
+    }
 
     document.getElementById("room-id-display").textContent = room_id;
     document.getElementById("current-room-id").style.display = "block";
-    initializePeer();
+    initializePeer(false); // Odaya katılan için false parametresi
 }
 
-function initializePeer() {
+function initializePeer(isCreator) {
     peer = new Peer();
 
     peer.on('open', async (id) => {
         console.log('My peer ID is: ' + id);
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            addParticipant(nickname, stream, id);
+            local_stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            addParticipant(nickname, local_stream, id);
             document.getElementById('leave-room-btn').style.display = 'inline-block';
+            
+            if (!isCreator) {
+                // Odadaki diğer kullanıcılara bağlan
+                let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
+                let room = rooms.find(r => r.roomId === room_id);
+                if (room && room.participants) {
+                    room.participants.forEach(participantNick => {
+                        if (participantNick !== nickname) {
+                            const call = peer.call(participantNick, local_stream, {
+                                metadata: { nickname: nickname }
+                            });
+                            handleCall(call);
+                        }
+                    });
+                }
+            }
+            
             updateActiveRooms();
         } catch (error) {
             console.error('Medya erişimi hatası:', error);
@@ -75,20 +87,27 @@ function initializePeer() {
     peer.on('call', handleIncomingCall);
 }
 
-async function handleIncomingCall(call) {
+function handleIncomingCall(call) {
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        call.answer(stream);
-        call.on('stream', (remoteStream) => {
-            addParticipant(call.metadata.nickname, remoteStream, call.peer);
-        });
+        call.answer(local_stream);
+        handleCall(call);
     } catch (error) {
         console.error('Gelen çağrı hatası:', error);
     }
 }
 
+function handleCall(call) {
+    call.on('stream', (remoteStream) => {
+        console.log('Remote stream received:', remoteStream);
+        addParticipant(call.metadata.nickname, remoteStream, call.peer);
+    });
+
+    call.on('error', (err) => {
+        console.error('Call error:', err);
+    });
+}
+
 function addParticipant(name, stream, peerId) {
-    console.log(`Adding participant: ${name}, PeerID: ${peerId}`);
     if (participants[peerId]) {
         console.log(`${name} (${peerId}) zaten katılımcı listesinde var.`);
         participants[peerId].video.srcObject = stream;
@@ -98,169 +117,20 @@ function addParticipant(name, stream, peerId) {
     let container = document.createElement("div");
     container.className = "col-4 pt-4";
     container.id = `participant-${peerId}`;
-    container.innerHTML = `<h5>${name}</h5><video height="200" controls autoplay ${peerId === peer.id ? 'muted' : ''}></video>`;
+    
+    let video = document.createElement("video");
+    video.autoplay = true;
+    video.height = 200;
+    video.playsInline = true;
+    if (peerId === peer.id) video.muted = true;
+    
+    container.innerHTML = `<h5>${name}</h5>`;
+    container.appendChild(video);
     document.getElementById("participants-container").appendChild(container);
 
-    let video = container.querySelector("video");
     video.srcObject = stream;
     participants[peerId] = { video, stream, name };
+    
     console.log(`Participant added: ${name}, PeerID: ${peerId}`);
     console.log("Current participants:", Object.keys(participants));
-
-    broadcastNewParticipant(name, peerId);
 }
-
-function removeParticipant(peerId) {
-    if (participants[peerId]) {
-        let participantDiv = document.getElementById(`participant-${peerId}`);
-        if (participantDiv) {
-            participantDiv.remove();
-        }
-        delete participants[peerId];
-        console.log(`Participant removed: ${peerId}`);
-        console.log("Current participants:", Object.keys(participants));
-
-        let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
-        let roomIndex = rooms.findIndex(r => r.roomId === room_id);
-        if (roomIndex !== -1) {
-            rooms[roomIndex].participants = rooms[roomIndex].participants.filter(p => p !== participants[peerId].name);
-            localStorage.setItem('rooms', JSON.stringify(rooms));
-        }
-    }
-}
-
-function leaveRoom() {
-    if (peer) {
-        peer.destroy();
-    }
-    if (local_stream) {
-        local_stream.getTracks().forEach(track => track.stop());
-    }
-    if (screenStream) {
-        screenStream.getTracks().forEach(track => track.stop());
-    }
-    document.getElementById('participants-container').innerHTML = '';
-    document.getElementById('leave-room-btn').style.display = 'none';
-    document.getElementById('room-input').value = '';
-    document.getElementById('current-room-id').style.display = 'none';
-    
-    let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
-    let roomIndex = rooms.findIndex(r => r.roomId === room_id);
-    if (roomIndex !== -1) {
-        rooms[roomIndex].participants = rooms[roomIndex].participants.filter(p => p !== nickname);
-        if (rooms[roomIndex].participants.length === 0) {
-            rooms.splice(roomIndex, 1);
-        }
-        localStorage.setItem('rooms', JSON.stringify(rooms));
-    }
-
-    participants = {};
-    connections = {};
-    notify("Odadan ayrıldınız.");
-}
-
-function notify(msg) {
-    let notification = document.getElementById("notification");
-    notification.innerHTML = msg;
-    notification.hidden = false;
-    setTimeout(() => {
-        notification.hidden = true;
-    }, 3000);
-}
-
-function generateRoomId() {
-    return Math.floor(10000000 + Math.random() * 90000000).toString();
-}
-
-function updateActiveRooms() {
-    let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
-    updateActiveRoomsList(rooms);
-}
-
-function updateActiveRoomsList(rooms) {
-    const activeRoomsList = document.getElementById('active-rooms-list');
-    activeRoomsList.innerHTML = '';
-    rooms.forEach(room => {
-        const listItem = document.createElement('li');
-        listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
-        listItem.innerHTML = `
-            ${room.roomId}
-            <span class="badge bg-primary rounded-pill">${room.participants.length} katılımcı</span>
-            <button class="btn btn-sm btn-outline-primary" onclick="joinRoom('${room.roomId}')">Katıl</button>
-        `;
-        activeRoomsList.appendChild(listItem);
-    });
-}
-
-const darkModeToggle = document.getElementById('darkModeToggle');
-const body = document.body;
-
-darkModeToggle.addEventListener('click', () => {
-    body.classList.toggle('dark-mode');
-    body.classList.toggle('light-mode');
-});
-
-if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    body.classList.add('dark-mode');
-} else {
-    body.classList.add('light-mode');
-}
-
-function toggleMute() {
-    isMuted = !isMuted;
-    if (local_stream) {
-        local_stream.getAudioTracks().forEach(track => {
-            track.enabled = !isMuted;
-        });
-        document.getElementById("mute-btn").innerHTML = isMuted ? 
-            '<i class="fas fa-microphone-slash"></i> Sesi Aç' : 
-            '<i class="fas fa-microphone"></i> Sesi Kapat';
-    }
-}
-
-function toggleCamera() {
-    isCameraOff = !isCameraOff;
-    if (local_stream) {
-        local_stream.getVideoTracks().forEach(track => {
-            track.enabled = !isCameraOff;
-        });
-        document.getElementById("camera-btn").innerHTML = isCameraOff ? 
-            '<i class="fas fa-video-slash"></i> Kamerayı Aç' : 
-            '<i class="fas fa-video"></i> Kamerayı Kapat';
-    }
-}
-
-async function toggleScreenShare() {
-    if (!screenSharing) {
-        try {
-            screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-            for (let conn of Object.values(connections)) {
-                const sender = conn.peerConnection.getSenders().find(s => s.track.kind === 'video');
-                sender.replaceTrack(screenStream.getVideoTracks()[0]);
-            }
-            screenSharing = true;
-            document.getElementById("screen-share-btn").innerHTML = '<i class="fas fa-desktop"></i> Ekran Paylaşımını Durdur';
-        } catch (e) {
-            console.error("Ekran paylaşımı başlatılamadı:", e);
-        }
-    } else {
-        screenStream.getTracks().forEach(track => track.stop());
-        for (let conn of Object.values(connections)) {
-            const sender = conn.peerConnection.getSenders().find(s => s.track.kind === 'video');
-            sender.replaceTrack(local_stream.getVideoTracks()[0]);
-        }
-        screenSharing = false;
-        document.getElementById("screen-share-btn").innerHTML = '<i class="fas fa-desktop"></i> Ekran Paylaş';
-    }
-}
-
-function broadcastNewParticipant(name, peerId) {
-    for (let conn of Object.values(connections)) {
-        if (conn.open) {
-            conn.send(JSON.stringify({ type: 'newParticipant', data: { name, peerId } }));
-        }
-    }
-}
-
-// Her 5 saniyede bir aktif odaları güncelle
-setInterval(updateActiveRooms, 5000);
