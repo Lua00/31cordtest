@@ -274,7 +274,7 @@ body.dark-mode {
   color: #333;
 }
 
-.dark-mode #active-rooms-list .list-group-item {
+.dark-mode #active-rooms-list  .list-group-item {
   background-color: #3a3a3a;
   color: #f4f4f4;
 }
