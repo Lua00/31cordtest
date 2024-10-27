@@ -1,7 +1,7 @@
 {
-  "name": "psychord",
+  "name": "31cord",
   "version": "1.0.0",
-  "description": "PSYCHORD Video Chat Application",
+  "description": "31cord Video Chat Application",
   "main": "server/server.js",
   "scripts": {
     "start": "node server/server.js"
