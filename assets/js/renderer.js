@@ -9,7 +9,7 @@ let participants = {};
 let isMuted = false;
 let isCameraOff = false;
 
-async function createRoom() {
+function createRoom() {
     nickname = document.getElementById("nickname-input").value;
     if (!nickname) {
         alert("Lütfen takma adınızı girin.");
@@ -21,28 +21,14 @@ async function createRoom() {
     document.getElementById("room-id-display").textContent = room_id;
     document.getElementById("current-room-id").style.display = "block";
     
-    try {
-        const response = await fetch('/api/rooms', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ roomId: room_id, createdBy: nickname }),
-        });
-        if (!response.ok) {
-            throw new Error('Oda oluşturma başarısız oldu');
-        }
-        console.log('Oda başarıyla kaydedildi');
-    } catch (error) {
-        console.error('Oda kaydedilirken hata oluştu:', error);
-        alert('Oda oluşturulurken bir hata oluştu. Lütfen tekrar deneyin.');
-        return;
-    }
+    let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
+    rooms.push({ roomId: room_id, createdBy: nickname, participants: [nickname] });
+    localStorage.setItem('rooms', JSON.stringify(rooms));
 
     initializePeer(room_id);
 }
 
-async function joinRoom() {
+function joinRoom() {
     nickname = document.getElementById("nickname-input").value;
     if (!nickname) {
         alert("Lütfen takma adınızı girin.");
@@ -55,34 +41,29 @@ async function joinRoom() {
         return;
     }
 
-    try {
-        const response = await fetch(`/api/rooms/${room_id}`);
-        if (!response.ok) {
-            throw new Error('Oda bulunamadı');
-        }
-        const room = await response.json();
-        if (!room) {
-            alert("Bu ID'ye sahip bir oda bulunamadı.");
-            return;
-        }
-    } catch (error) {
-        console.error('Oda kontrolü sırasında hata oluştu:', error);
-        alert("Oda kontrolü sırasında bir hata oluştu. Lütfen tekrar deneyin.");
+    let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
+    let room = rooms.find(r => r.roomId === room_id);
+    if (!room) {
+        alert("Bu ID'ye sahip bir oda bulunamadı.");
         return;
     }
+
+    room.participants.push(nickname);
+    localStorage.setItem('rooms', JSON.stringify(rooms));
 
     document.getElementById("room-id-display").textContent = room_id;
     document.getElementById("current-room-id").style.display = "block";
     initializePeer();
 }
 
-async function initializePeer() {
+function initializePeer() {
     peer = new Peer();
 
     peer.on('open', async (id) => {
         console.log('My peer ID is: ' + id);
         try {
-            await addParticipant(nickname, await navigator.mediaDevices.getUserMedia({ video: true, audio: true }), id);
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            addParticipant(nickname, stream, id);
             document.getElementById('leave-room-btn').style.display = 'inline-block';
             updateActiveRooms();
         } catch (error) {
@@ -106,7 +87,7 @@ async function handleIncomingCall(call) {
     }
 }
 
-async function addParticipant(name, stream, peerId) {
+function addParticipant(name, stream, peerId) {
     console.log(`Adding participant: ${name}, PeerID: ${peerId}`);
     if (participants[peerId]) {
         console.log(`${name} (${peerId}) zaten katılımcı listesinde var.`);
@@ -126,27 +107,10 @@ async function addParticipant(name, stream, peerId) {
     console.log(`Participant added: ${name}, PeerID: ${peerId}`);
     console.log("Current participants:", Object.keys(participants));
 
-    try {
-        await fetch('/api/participants', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                roomId: room_id,
-                peerId: peerId,
-                name: name
-            }),
-        });
-        console.log('Katılımcı başarıyla kaydedildi');
-    } catch (error) {
-        console.error('Katılımcı kaydedilirken hata oluştu:', error);
-    }
-
     broadcastNewParticipant(name, peerId);
 }
 
-async function removeParticipant(peerId) {
+function removeParticipant(peerId) {
     if (participants[peerId]) {
         let participantDiv = document.getElementById(`participant-${peerId}`);
         if (participantDiv) {
@@ -156,18 +120,16 @@ async function removeParticipant(peerId) {
         console.log(`Participant removed: ${peerId}`);
         console.log("Current participants:", Object.keys(participants));
 
-        try {
-            await fetch(`/api/participants/${room_id}/${peerId}`, {
-                method: 'DELETE',
-            });
-            console.log('Katılımcı başarıyla silindi');
-        } catch (error) {
-            console.error('Katılımcı silinirken hata oluştu:', error);
+        let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
+        let roomIndex = rooms.findIndex(r => r.roomId === room_id);
+        if (roomIndex !== -1) {
+            rooms[roomIndex].participants = rooms[roomIndex].participants.filter(p => p !== participants[peerId].name);
+            localStorage.setItem('rooms', JSON.stringify(rooms));
         }
     }
 }
 
-async function leaveRoom() {
+function leaveRoom() {
     if (peer) {
         peer.destroy();
     }
@@ -182,13 +144,14 @@ async function leaveRoom() {
     document.getElementById('room-input').value = '';
     document.getElementById('current-room-id').style.display = 'none';
     
-    try {
-        await fetch(`/api/participants/${room_id}/${peer.id}`, {
-            method: 'DELETE',
-        });
-        console.log('Kullanıcı odadan başarıyla ayrıldı');
-    } catch (error) {
-        console.error('Kullanıcı odadan ayrılırken hata oluştu:', error);
+    let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
+    let roomIndex = rooms.findIndex(r => r.roomId === room_id);
+    if (roomIndex !== -1) {
+        rooms[roomIndex].participants = rooms[roomIndex].participants.filter(p => p !== nickname);
+        if (rooms[roomIndex].participants.length === 0) {
+            rooms.splice(roomIndex, 1);
+        }
+        localStorage.setItem('rooms', JSON.stringify(rooms));
     }
 
     participants = {};
@@ -209,14 +172,9 @@ function generateRoomId() {
     return Math.floor(10000000 + Math.random() * 90000000).toString();
 }
 
-async function updateActiveRooms() {
-    try {
-        const response = await fetch('/api/rooms');
-        const rooms = await response.json();
-        updateActiveRoomsList(rooms);
-    } catch (error) {
-        console.error('Aktif odaları güncellerken hata oluştu:', error);
-    }
+function updateActiveRooms() {
+    let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
+    updateActiveRoomsList(rooms);
 }
 
 function updateActiveRoomsList(rooms) {
@@ -293,6 +251,14 @@ async function toggleScreenShare() {
         }
         screenSharing = false;
         document.getElementById("screen-share-btn").innerHTML = '<i class="fas fa-desktop"></i> Ekran Paylaş';
+    }
+}
+
+function broadcastNewParticipant(name, peerId) {
+    for (let conn of Object.values(connections)) {
+        if (conn.open) {
+            conn.send(JSON.stringify({ type: 'newParticipant', data: { name, peerId } }));
+        }
     }
 }
 
