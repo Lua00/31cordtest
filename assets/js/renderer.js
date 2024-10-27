@@ -64,8 +64,7 @@ function initializePeer(id) {
                     notify("Oda başarıyla oluşturuldu. Oda ID: " + id);
                 } else {
                     notify("Odaya katılınıyor...");
-                    let call = peer.call(room_id, stream, { metadata: { nickname } });
-                    handleCall(call);
+                    connectToPeer(room_id, stream);
                 }
 
                 document.getElementById('leave-room-btn').style.display = 'inline-block';
@@ -94,10 +93,17 @@ function initializePeer(id) {
     });
 }
 
+function connectToPeer(peerId, stream) {
+    const conn = peer.connect(peerId);
+    conn.on('open', () => {
+        const call = peer.call(peerId, stream, { metadata: { nickname } });
+        handleCall(call);
+    });
+}
+
 function handleCall(call) {
-    currentPeer = call;
     call.on('stream', (remoteStream) => {
-        const remoteNickname = call.metadata.nickname || `Katılımcı ${call.peer}`;
+        const remoteNickname = call.metadata?.nickname || `Katılımcı ${call.peer}`;
         addParticipant(remoteNickname, remoteStream);
     });
 }
@@ -107,8 +113,12 @@ function setLocalStream(stream) {
 }
 
 function addParticipant(name, stream) {
-    if (participants[name]) return;
+    if (participants[name]) {
+        console.log(`${name} zaten katılımcı listesinde var.`);
+        return;
+    }
 
+    console.log(`${name} katılımcı olarak ekleniyor.`);
     let container = document.createElement("div");
     container.className = "col-4 pt-4";
     container.id = `participant-${name}`;
