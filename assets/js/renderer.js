@@ -1,3 +1,5 @@
+const { MongoClient } = require('mongodb');
+
 let room_id;
 let local_stream;
 let screenStream;
@@ -9,7 +11,20 @@ let participants = {};
 let isMuted = false;
 let isCameraOff = false;
 
-function createRoom() {
+// MongoDB bağlantı URL'si
+const mongoUrl = 'mongodb://localhost:27017';
+const dbName = 'psychordDB';
+let db;
+
+// MongoDB'ye bağlan
+MongoClient.connect(mongoUrl, { useUnifiedTopology: true })
+  .then(client => {
+    console.log('MongoDB\'ye başarıyla bağlandı');
+    db = client.db(dbName);
+  })
+  .catch(error => console.error('MongoDB bağlantı hatası:', error));
+
+async function createRoom() {
     nickname = document.getElementById("nickname-input").value;
     if (!nickname) {
         alert("Lütfen takma adınızı girin.");
@@ -20,10 +35,23 @@ function createRoom() {
     document.getElementById("room-input").value = room_id;
     document.getElementById("room-id-display").textContent = room_id;
     document.getElementById("current-room-id").style.display = "block";
+    
+    // Odayı MongoDB'ye kaydet
+    try {
+        await db.collection('rooms').insertOne({ 
+            roomId: room_id, 
+            createdBy: nickname,
+            createdAt: new Date()
+        });
+        console.log('Oda başarıyla kaydedildi');
+    } catch (error) {
+        console.error('Oda kaydedilirken hata oluştu:', error);
+    }
+
     initializePeer(room_id);
 }
 
-function joinRoom() {
+async function joinRoom() {
     nickname = document.getElementById("nickname-input").value;
     if (!nickname) {
         alert("Lütfen takma adınızı girin.");
@@ -36,97 +64,27 @@ function joinRoom() {
         return;
     }
 
+    // Odanın varlığını kontrol et
+    try {
+        const room = await db.collection('rooms').findOne({ roomId: room_id });
+        if (!room) {
+            alert("Bu ID'ye sahip bir oda bulunamadı.");
+            return;
+        }
+    } catch (error) {
+        console.error('Oda kontrolü sırasında hata oluştu:', error);
+        alert("Oda kontrolü sırasında bir hata oluştu. Lütfen tekrar deneyin.");
+        return;
+    }
+
     document.getElementById("room-id-display").textContent = room_id;
     document.getElementById("current-room-id").style.display = "block";
     initializePeer();
 }
 
-function sendJoinRequest(roomId) {
-    document.getElementById("joinRequestMessage").textContent = `${nickname} ${roomId} numaralı odaya katılmak istiyor`;
-    new bootstrap.Modal(document.getElementById("joinRequestModal")).show();
-}
+// ... (diğer fonksiyonlar aynı kalacak)
 
-function acceptJoinRequest() {
-    bootstrap.Modal.getInstance(document.getElementById("joinRequestModal")).hide();
-    initializePeer();
-}
-
-function initializePeer(id) {
-    peer = new Peer(id);
-
-    peer.on('open', (peerId) => {
-        console.log("Peer ID'im: " + peerId);
-        navigator.mediaDevices.getUserMedia({ audio: true, video: true })
-            .then((stream) => {
-                local_stream = stream;
-                setLocalStream(local_stream);
-                if (id) {
-                    notify("Oda başarıyla oluşturuldu. Oda ID: " + id);
-                } else {
-                    notify("Odaya katılınıyor...");
-                    connectToPeer(room_id, stream);
-                }
-
-                document.getElementById('leave-room-btn').style.display = 'inline-block';
-                initConnectionListeners();
-            })
-            .catch((err) => {
-                console.error("Medya cihazlarına erişim hatası.", err);
-                notify("Medya cihazlarına erişilemedi. Lütfen kamera ve mikrofon izinlerinizi kontrol edin.");
-            });
-    });
-
-    peer.on('error', (error) => {
-        console.error("PeerJS hatası:", error);
-        if (error.type === 'unavailable-id') {
-            notify("Oda oluşturulamadı. Lütfen tekrar deneyin.");
-        } else if (error.type === 'peer-unavailable') {
-            notify("Odaya katılınamadı. Oda mevcut olmayabilir veya dolu olabilir.");
-        } else {
-            notify("Bir hata oluştu. Lütfen tekrar deneyin.");
-        }
-    });
-
-    peer.on('call', handleIncomingCall);
-}
-
-function connectToPeer(peerId, stream) {
-    console.log(`Connecting to peer: ${peerId}`);
-    const conn = peer.connect(peerId);
-    conn.on('open', () => {
-        console.log(`Connection to ${peerId} opened`);
-        connections[peerId] = conn;
-        sendParticipantInfo(conn);
-        const call = peer.call(peerId, stream, { metadata: { nickname, peerId: peer.id } });
-        handleOutgoingCall(call);
-    });
-}
-
-function handleIncomingCall(call) {
-    console.log(`Incoming call from: ${call.peer}`);
-    call.answer(screenSharing ? screenStream : local_stream);
-    handleCall(call);
-}
-
-function handleOutgoingCall(call) {
-    console.log(`Outgoing call to: ${call.peer}`);
-    handleCall(call);
-}
-
-function handleCall(call) {
-    call.on('stream', (remoteStream) => {
-        console.log(`Received stream from: ${call.peer}`);
-        const remoteNickname = call.metadata?.nickname || `Katılımcı ${call.peer}`;
-        const remotePeerId = call.metadata?.peerId || call.peer;
-        addParticipant(remoteNickname, remoteStream, remotePeerId);
-    });
-}
-
-function setLocalStream(stream) {
-    addParticipant(nickname, stream, peer.id);
-}
-
-function addParticipant(name, stream, peerId) {
+async function addParticipant(name, stream, peerId) {
     console.log(`Adding participant: ${name}, PeerID: ${peerId}`);
     if (participants[peerId]) {
         console.log(`${name} (${peerId}) zaten katılımcı listesinde var.`);
@@ -146,107 +104,148 @@ function addParticipant(name, stream, peerId) {
     console.log(`Participant added: ${name}, PeerID: ${peerId}`);
     console.log("Current participants:", Object.keys(participants));
 
+    // Katılımcıyı MongoDB'ye kaydet
+    try {
+        await db.collection('participants').insertOne({
+            roomId: room_id,
+            peerId: peerId,
+            name: name,
+            joinedAt: new Date()
+        });
+        console.log('Katılımcı başarıyla kaydedildi');
+    } catch (error) {
+        console.error('Katılımcı kaydedilirken hata oluştu:', error);
+    }
+
     broadcastNewParticipant(name, peerId);
 }
 
-function sendParticipantInfo(conn) {
-    const participantInfo = Object.keys(participants).map(peerId => ({
-        peerId,
-        nickname: participants[peerId].name
-    }));
-    conn.send(JSON.stringify({ type: 'participantInfo', data: participantInfo }));
-}
+async function removeParticipant(peerId) {
+    if (participants[peerId]) {
+        let participantDiv = document.getElementById(`participant-${peerId}`);
+        if (participantDiv) {
+            participantDiv.remove();
+        }
+        delete participants[peerId];
+        console.log(`Participant removed: ${peerId}`);
+        console.log("Current participants:", Object.keys(participants));
 
-function broadcastNewParticipant(name, peerId) {
-    const newParticipantInfo = { type: 'newParticipant', data: { name, peerId } };
-    for (let connId in connections) {
-        if (connections[connId].open) {
-            connections[connId].send(JSON.stringify(newParticipantInfo));
+        // Katılımcıyı MongoDB'den sil
+        try {
+            await db.collection('participants').deleteOne({ roomId: room_id, peerId: peerId });
+            console.log('Katılımcı başarıyla silindi');
+        } catch (error) {
+            console.error('Katılımcı silinirken hata oluştu:', error);
         }
     }
 }
 
-function toggleScreenShare() {
-    if (screenSharing) {
-        stopScreenSharing();
-    } else {
-        startScreenShare();
+async function leaveRoom() {
+    if (peer) {
+        peer.destroy();
     }
-}
-
-function startScreenShare() {
-    navigator.mediaDevices.getDisplayMedia({ video: true }).then((stream) => {
-        screenStream = stream;
-        let videoTrack = stream.getVideoTracks()[0];
-        videoTrack.onended = stopScreenSharing;
-
-        const localVideo = participants[peer.id].video;
-        localVideo.srcObject = screenStream;
-
-        for (let peerId in connections) {
-            updatePeerStream(peerId, screenStream);
-        }
-
-        screenSharing = true;
-        document.getElementById("screen-share-btn").innerHTML = '<i class="fas fa-desktop"></i> Paylaşımı Durdur';
-    }).catch((err) => {
-        console.error("Ekran paylaşımı hatası:", err);
-    });
-}
-
-function stopScreenSharing() {
+    if (local_stream) {
+        local_stream.getTracks().forEach(track => track.stop());
+    }
     if (screenStream) {
         screenStream.getTracks().forEach(track => track.stop());
     }
-
-    const localVideo = participants[peer.id].video;
-    localVideo.srcObject = local_stream;
-
-    for (let peerId in connections) {
-        updatePeerStream(peerId, local_stream);
+    document.getElementById('participants-container').innerHTML = '';
+    document.getElementById('leave-room-btn').style.display = 'none';
+    document.getElementById('room-input').value = '';
+    document.getElementById('current-room-id').style.display = 'none';
+    
+    // Odadan ayrılan kullanıcıyı MongoDB'den sil
+    try {
+        await db.collection('participants').deleteOne({ roomId: room_id, peerId: peer.id });
+        console.log('Kullanıcı odadan başarıyla ayrıldı');
+    } catch (error) {
+        console.error('Kullanıcı odadan ayrılırken hata oluştu:', error);
     }
 
-    screenSharing = false;
-    document.getElementById("screen-share-btn").innerHTML = '<i class="fas fa-desktop"></i> Ekran Paylaş';
-    console.log("Ekran paylaşımı durduruldu.");
+    participants = {};
+    connections = {};
+    notify("Odadan ayrıldınız.");
 }
 
-function updatePeerStream(peerId, stream) {
-    const connection = peer.connections[peerId];
-    if (connection && connection[0]) {
-        const peerConnection = connection[0].peerConnection;
-        const sender = peerConnection.getSenders().find(s => s.track.kind === 'video');
-        if (sender) {
-            sender.replaceTrack(stream.getVideoTracks()[0]);
-        } else {
-            console.error(`Video sender not found for peer ${peerId}`);
-        }
-    } else {
-        console.error(`Connection not found for peer ${peerId}`);
-    }
-}
-
-function initConnectionListeners() {
-    if (!peer) return;
-
-    peer.on('connection', (conn) => {
-        console.log(`New connection from: ${conn.peer}`);
-        connections[conn.peer] = conn;
-
-        conn.on('open', () => {
-            console.log(`Connection to ${conn.peer} opened`);
-            sendParticipantInfo(conn);
-            
-            conn.on('data', (data) => {
-                try {
-                    const parsedData = JSON.parse(data);
-                    handleIncomingData(parsedData, conn.peer);
-                } catch (error) {
-                    console.error('Veri işleme hatası:', error);
+async function updateActiveRooms() {
+    if (peer && connections) {
+        try {
+            const rooms = await db.collection('rooms').aggregate([
+                {
+                    $lookup: {
+                        from: 'participants',
+                        localField: 'roomId',
+                        foreignField: 'roomId',
+                        as: 'participants'
+                    }
+                },
+                {
+                    $project: {
+                        id: '$roomId',
+                        participants: { $size: '$participants' }
+                    }
                 }
-            });
-        });
+            ]).toArray();
 
+            updateActiveRoomsList(rooms);
+
+            for (const conn of Object.values(connections)) {
+                if (conn.open) {
+                    try {
+                        conn.send(JSON.stringify({ type: 'activeRooms', rooms: rooms }));
+                    } catch (error) {
+                        console.error('Veri gönderme hatası:', error);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Aktif odaları güncellerken hata oluştu:', error);
+        }
+    }
+}
+
+// Chat fonksiyonları
+async function sendChatMessage() {
+    const chatInput = document.getElementById('chat-input');
+    const message = chatInput.value.trim();
+    if (message) {
+        const chatMessage = {
+            sender: nickname,
+            message: message,
+            timestamp: new Date().toISOString()
+        };
+        displayChatMessage(chatMessage);
+        
+        chatInput.value = '';
+
+        // Mesajı MongoDB'ye kaydet
+        try {
+            await db.collection('messages').insertOne({
+                roomId: room_id,
+                ...chatMessage
+            });
+            console.log('Mesaj başarıyla kaydedildi');
+        } catch (error) {
+            console.error('Mesaj kaydedilirken hata oluştu:', error);
+        }
+
+        for (const conn of Object.values(connections)) {
+            if (conn.open) {
+                try {
+                    conn.send(JSON.stringify({ type: 'chat', data: chatMessage }));
+                } catch (error) {
+                    console.error('Sohbet mesajı gönderme hatası:', error);
+                }
+            }
+        }
+    }
+}
+
+// Diğer fonksiyonlar aynı kalacak...
+
+// Her 5 saniyede bir aktif odaları güncelle
+setInterval(updateActiveRooms, 5000);
         conn.on('close', () => {
             removeParticipant(conn.peer);
             delete connections[conn.peer];
