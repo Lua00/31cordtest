@@ -1,0 +1,13 @@
+{
+  "name": "psychord",
+  "version": "1.0.0",
+  "description": "PSYCHORD Video Chat Application",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1",
+    "mongodb": "^4.1.0"
+  }
+}
