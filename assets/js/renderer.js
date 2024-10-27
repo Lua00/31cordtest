@@ -104,7 +104,7 @@ function connectToPeer(peerId, stream) {
 
 function handleIncomingCall(call) {
     console.log(`Incoming call from: ${call.peer}`);
-    call.answer(local_stream);
+    call.answer(screenSharing ? screenStream : local_stream);
     handleCall(call);
 }
 
@@ -130,6 +130,7 @@ function addParticipant(name, stream, peerId) {
     console.log(`Adding participant: ${name}, PeerID: ${peerId}`);
     if (participants[peerId]) {
         console.log(`${name} (${peerId}) zaten katılımcı listesinde var.`);
+        participants[peerId].video.srcObject = stream;
         return;
     }
 
@@ -145,7 +146,6 @@ function addParticipant(name, stream, peerId) {
     console.log(`Participant added: ${name}, PeerID: ${peerId}`);
     console.log("Current participants:", Object.keys(participants));
 
-    // Yeni katılımcı bilgisini diğer katılımcılara gönder
     broadcastNewParticipant(name, peerId);
 }
 
@@ -180,16 +180,12 @@ function startScreenShare() {
         let videoTrack = stream.getVideoTracks()[0];
         videoTrack.onended = stopScreenSharing;
 
-        for (let peerId in connections) {
-            const call = peer.call(peerId, screenStream, { metadata: { type: 'screen', nickname } });
-            call.on('stream', (remoteStream) => {
-                // Handle incoming streams if needed
-            });
-        }
-
-        // Update local video
         const localVideo = participants[peer.id].video;
         localVideo.srcObject = screenStream;
+
+        for (let peerId in connections) {
+            updatePeerStream(peerId, screenStream);
+        }
 
         screenSharing = true;
         document.getElementById("screen-share-btn").innerHTML = '<i class="fas fa-desktop"></i> Paylaşımı Durdur';
@@ -203,20 +199,31 @@ function stopScreenSharing() {
         screenStream.getTracks().forEach(track => track.stop());
     }
 
-    // Restore local video
     const localVideo = participants[peer.id].video;
     localVideo.srcObject = local_stream;
 
     for (let peerId in connections) {
-        const call = peer.call(peerId, local_stream, { metadata: { type: 'camera', nickname } });
-        call.on('stream', (remoteStream) => {
-            // Handle incoming streams if needed
-        });
+        updatePeerStream(peerId, local_stream);
     }
 
     screenSharing = false;
     document.getElementById("screen-share-btn").innerHTML = '<i class="fas fa-desktop"></i> Ekran Paylaş';
     console.log("Ekran paylaşımı durduruldu.");
+}
+
+function updatePeerStream(peerId, stream) {
+    const connection = peer.connections[peerId];
+    if (connection && connection[0]) {
+        const peerConnection = connection[0].peerConnection;
+        const sender = peerConnection.getSenders().find(s => s.track.kind === 'video');
+        if (sender) {
+            sender.replaceTrack(stream.getVideoTracks()[0]);
+        } else {
+            console.error(`Video sender not found for peer ${peerId}`);
+        }
+    } else {
+        console.error(`Connection not found for peer ${peerId}`);
+    }
 }
 
 function initConnectionListeners() {
@@ -254,16 +261,14 @@ function handleIncomingData(data, senderId) {
             break;
         case 'newParticipant':
             if (!participants[data.data.peerId]) {
-                // Yeni katılımcı için çağrı başlat
-                const call = peer.call(data.data.peerId, local_stream, { metadata: { nickname, peerId: peer.id } });
+                const call = peer.call(data.data.peerId, screenSharing ? screenStream : local_stream, { metadata: { nickname, peerId: peer.id } });
                 handleOutgoingCall(call);
             }
             break;
         case 'participantInfo':
             data.data.forEach(participant => {
                 if (!participants[participant.peerId] && participant.peerId !== peer.id) {
-                    // Mevcut katılımcı için çağrı başlat
-                    const call = peer.call(participant.peerId, local_stream, { metadata: { nickname, peerId: peer.id } });
+                    const call = peer.call(participant.peerId, screenSharing ? screenStream : local_stream, { metadata: { nickname, peerId: peer.id } });
                     handleOutgoingCall(call);
                 }
             });
@@ -365,7 +370,6 @@ function updateActiveRooms() {
         }];
         updateActiveRoomsList(activeRooms);
 
-        // Aktif odaları diğer katılımcılara gönder
         for (const conn of Object.values(connections)) {
             if (conn.open) {
                 try {
@@ -378,7 +382,6 @@ function updateActiveRooms() {
     }
 }
 
-// Her 5 saniyede bir aktif odaları güncelle
 setInterval(updateActiveRooms, 5000);
 
 const darkModeToggle = document.getElementById('darkModeToggle');
@@ -389,15 +392,12 @@ darkModeToggle.addEventListener('click', () => {
     body.classList.toggle('light-mode');
 });
 
-// Sayfa yüklendiğinde tercih edilen temayı kontrol et
 if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    
     body.classList.add('dark-mode');
 } else {
     body.classList.add('light-mode');
 }
 
-// Chat fonksiyonları
 function sendChatMessage() {
     const chatInput = document.getElementById('chat-input');
     const message = chatInput.value.trim();
@@ -408,6 +408,7 @@ function sendChatMessage() {
             timestamp: new Date().toISOString()
         };
         displayChatMessage(chatMessage);
+        
         chatInput.value = '';
 
         for (const conn of Object.values(connections)) {
