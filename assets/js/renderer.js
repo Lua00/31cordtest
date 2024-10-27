@@ -246,12 +246,11 @@ async function sendChatMessage() {
 
 // Her 5 saniyede bir aktif odaları güncelle
 setInterval(updateActiveRooms, 5000);
+
         conn.on('close', () => {
             removeParticipant(conn.peer);
             delete connections[conn.peer];
         });
-    });
-}
 
 function handleIncomingData(data, senderId) {
     switch (data.type) {
