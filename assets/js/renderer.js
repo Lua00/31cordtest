@@ -289,7 +289,7 @@ function updateActiveRooms() {
         // Aktif odaları diğer katılımcılara gönder
         Object.values(peer.connections).forEach(conns => {
             conns.forEach(conn => {
-                if (conn.open) {
+                if (conn.open && typeof conn.send === 'function') {
                     conn.send(JSON.stringify({ type: 'activeRooms', rooms: activeRooms }));
                 }
             });
@@ -297,6 +297,7 @@ function updateActiveRooms() {
     }
 }
 
+// Her 5 saniyede bir aktif odaları güncelle
 setInterval(updateActiveRooms, 5000);
 
 const darkModeToggle = document.getElementById('darkModeToggle');
