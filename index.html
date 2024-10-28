@@ -82,6 +82,18 @@
                     <p id="room-id-display"></p>
                 </div>
 
+                <div id="video-controls" class="mb-4 hidden">
+                    <button id="toggle-audio" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-2">
+                        <i class="fas fa-microphone"></i> Mikrofon
+                    </button>
+                    <button id="toggle-video" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-2">
+                        <i class="fas fa-video"></i> Kamera
+                    </button>
+                    <button id="share-screen" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                        <i class="fas fa-desktop"></i> Ekran Paylaş
+                    </button>
+                </div>
+
                 <div id="participants-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4"></div>
 
                 <button id="leave-room-btn" class="mt-4 w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:text-sm hidden">
@@ -178,7 +190,7 @@
         </div>
     </div>
 
-    <button id="toggle-dark-mode" class="fixed bottom-5 left-5 p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+    <button id="toggle-dark-mode" class="fixed bottom-5 left-5 p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600  focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
         <i class="fas fa-moon dark:hidden"></i>
         <i class="fas fa-sun hidden dark:inline"></i>
     </button>
@@ -186,43 +198,5 @@
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="renderer.js"></script>
-    <script>
-        function toggleDarkMode() {
-            document.documentElement.classList.toggle('dark');
-            localStorage.setItem('darkMode', document.documentElement.classList.contains('dark'));
-        }
-
-        document.getElementById('toggle-dark-mode').addEventListener('click', toggleDarkMode);
-
-        document.addEventListener('DOMContentLoaded', (event) => {
-            if  (localStorage.getItem('darkMode') === 'true' || 
-                (!('darkMode' in localStorage) && 
-                window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                document.documentElement.classList.add('dark');
-            }
-        });
-
-        document.getElementById('createRoomBtn').addEventListener('click', () => {
-            document.getElementById('createRoomModal').classList.remove('hidden');
-        });
-
-        document.getElementById('joinRoomBtn').addEventListener('click', () => {
-            document.getElementById('joinRoomModal').classList.remove('hidden');
-        });
-
-        function closeModal(modalId) {
-            document.getElementById(modalId).classList.add('hidden');
-        }
-
-        function notify(message) {
-            const notification = document.getElementById('notification');
-            const notificationText = document.getElementById('notification-text');
-            notificationText.textContent = message;
-            notification.classList.remove('hidden');
-            setTimeout(() => {
-                notification.classList.add('hidden');
-            }, 3000);
-        }
-    </script>
 </body>
 </html>
