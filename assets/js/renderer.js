@@ -1,12 +1,3 @@
-Anladım, tüm bu sorunları çözen ve istediğiniz özellikleri ekleyen güncellenmiş bir kod sunacağım. İşte HTML ve JavaScript kodlarının tam ve güncellenmiş versiyonları:
-
-```html project="Video Chat" file="index.html"
-...
-```
-
-Şimdi de güncellenmiş `renderer.js` dosyasını sunuyorum:
-
-```javascript
 let room_id;
 let local_stream;
 let screenStream;
@@ -22,7 +13,7 @@ const API_BASE_URL = window.location.origin;
 
 function createRoom() {
     nickname = document.getElementById("create-nickname-input").value;
-    if (!nickname) {
+    if  (!nickname) {
         notify("Lütfen takma adınızı girin.");
         return;
     }
@@ -386,5 +377,34 @@ function stopScreenSharing() {
         });
 
         screenSharing = false;
-        document.getElementById('share-screen').innerHTML
-```
+        document.getElementById('share-screen').innerHTML = '<i class="fas fa-desktop"></i> Ekran Paylaş';
+        notify("Ekran paylaşımı durduruldu.");
+    }
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).classList.add('hidden');
+}
+
+document.getElementById('createRoomBtn').addEventListener('click', () => {
+    document.getElementById('createRoomModal').classList.remove('hidden');
+});
+
+document.getElementById('joinRoomBtn').addEventListener('click', () => {
+    document.getElementById('joinRoomModal').classList.remove('hidden');
+});
+
+document.getElementById('leave-room-btn').addEventListener('click', leaveRoom);
+document.getElementById('toggle-audio').addEventListener('click', toggleAudio);
+document.getElementById('toggle-video').addEventListener('click', toggleVideo);
+document.getElementById('share-screen').addEventListener('click', shareScreen);
+
+document.getElementById('toggle-dark-mode').addEventListener('click', () => {
+    document.documentElement.classList.toggle('dark');
+});
+
+// Sayfa yüklendiğinde aktif odaları güncelle
+window.addEventListener('load', updateActiveRooms);
+
+// Periyodik olarak aktif oda listesini güncelle
+setInterval(updateActiveRooms, 30000); // Her 30 saniyede bir güncelle
