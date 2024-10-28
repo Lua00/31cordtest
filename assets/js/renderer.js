@@ -185,7 +185,8 @@ function addParticipant(name, stream, peerId) {
         }
         return response.json();
     })
-    .then(data => console.log('Katılımcı başarıyla eklendi:', data))
+    .then(data => 
+ console.log('Katılımcı başarıyla eklendi:', data))
     .catch(error => console.error('Katılımcı ekleme hatası:', error));
 }
 
@@ -195,7 +196,6 @@ function removeParticipant(peerId) {
         if (participantDiv) {
             participantDiv.remove();
         }
-        
         delete participants[peerId];
         console.log(`Participant removed: ${peerId}`);
         console.log("Current participants:", Object.keys(participants));
