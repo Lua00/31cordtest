@@ -1,11 +1,22 @@
 const express = require('express');
 const { MongoClient, ObjectId } = require('mongodb');
+const { ExpressPeerServer } = require('peer');
 const app = express();
+const server = require('http').Server(app);
+const io = require('socket.io')(server);
 
 const mongoUrl = 'mongodb+srv://14at558:sU55mLitfA3WDwkx@31cord.fvq5d.mongodb.net/?retryWrites=true&w=majority&appName=31CORD';
 const dbName = '31CORD';
 
 app.use(express.json());
+app.use(express.static('public'));
+
+const peerServer = ExpressPeerServer(server, {
+  debug: true,
+  path: '/peerjs'
+});
+
+app.use('/peerjs', peerServer);
 
 let db;
 
@@ -23,12 +34,15 @@ app.post('/api/rooms', async (req, res) => {
     const room = {
       roomId: roomId,
       createdBy: nickname,
-      participants: [nickname]
+      participants: [nickname],
+      createdAt: new Date()
     };
-    await db.collection('rooms').insertOne(room);
+    const result = await db.collection('rooms').insertOne(room);
+    console.log('Oda oluşturuldu:', result);
     res.json({ success: true, roomId: roomId });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Oda oluşturulamadı' });
+    console.error('Oda oluşturma hatası:', error);
+    res.status(500).json({ success: false, message: 'Oda oluşturulamadı', error: error.message });
   }
 });
 
@@ -46,7 +60,8 @@ app.post('/api/rooms/join', async (req, res) => {
     );
     res.json({ success: true, roomId: roomId });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Odaya katılınamadı' });
+    console.error('Odaya katılma hatası:', error);
+    res.status(500).json({ success: false, message: 'Odaya katılınamadı', error: error.message });
   }
 });
 
@@ -65,7 +80,8 @@ app.post('/api/rooms/:roomId/leave', async (req, res) => {
     }
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Odadan ayrılma işlemi başarısız oldu' });
+    console.error('Odadan ayrılma hatası:', error);
+    res.status(500).json({ success: false, message: 'Odadan ayrılma işlemi başarısız oldu', error: error.message });
   }
 });
 
@@ -75,44 +91,50 @@ app.get('/api/rooms', async (req, res) => {
     const rooms = await db.collection('rooms').find().toArray();
     res.json(rooms);
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Odalar getirilemedi' });
+    console.error('Odaları getirme hatası:', error);
+    res.status(500).json({ success: false, message: 'Odalar getirilemedi', error: error.message });
   }
 });
 
 // Katılımcı ekleme
-
 app.post('/api/participants', async (req, res) => {
   try {
-    await db.collection('participants').insertOne(req.body);
+    const result = await db.collection('participants').insertOne(req.body);
+    console.log('Katılımcı eklendi:', result);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Katılımcı eklenemedi' });
+    console.error('Katılımcı ekleme hatası:', error);
+    res.status(500).json({ success: false, message: 'Katılımcı eklenemedi', error: error.message });
   }
 });
 
 // Katılımcı silme
 app.delete('/api/participants/:roomId/:peerId', async (req, res) => {
   try {
-    await db.collection('participants').deleteOne({
+    const result = await db.collection('participants').deleteOne({
       roomId: req.params.roomId,
       peerId: req.params.peerId
     });
+    console.log('Katılımcı silindi:', result);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Katılımcı silinemedi' });
+    console.error('Katılımcı silme hatası:', error);
+    res.status(500).json({ success: false, message: 'Katılımcı silinemedi', error: error.message });
   }
 });
 
 // Mesaj gönderme
 app.post('/api/messages/:roomId', async (req, res) => {
   try {
-    await db.collection('messages').insertOne({
+    const result = await db.collection('messages').insertOne({
       roomId: req.params.roomId,
       ...req.body
     });
+    console.log('Mesaj gönderildi:', result);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Mesaj gönderilemedi' });
+    console.error('Mesaj gönderme hatası:', error);
+    res.status(500).json({ success: false, message: 'Mesaj gönderilemedi', error: error.message });
   }
 });
 
@@ -125,11 +147,25 @@ app.get('/api/messages/:roomId', async (req, res) => {
       .toArray();
     res.json(messages);
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Mesajlar getirilemedi' });
+    console.error('Mesajları getirme hatası:', error);
+    res.status(500).json({ success: false, message: 'Mesajlar getirilemedi', error: error.message });
   }
 });
 
+io.on('connection', (socket) => {
+  console.log('Yeni bir kullanıcı bağlandı');
+
+  socket.on('join-room', (roomId, userId) => {
+    socket.join(roomId);
+    socket.to(roomId).broadcast.emit('user-connected', userId);
+
+    socket.on('disconnect', () => {
+      socket.to(roomId).broadcast.emit('user-disconnected', userId);
+    });
+  });
+});
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server ${PORT} portunda çalışıyor`);
 });
