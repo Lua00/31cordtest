@@ -288,4 +288,19 @@ function updateActiveRoomsList(rooms) {
     activeRoomsList.innerHTML = '';
     if (rooms.length === 0) {
         activeRoomsList.innerHTML = '<li class="list-group-item">Aktif oda bulunmuyor.</li>';
-    } 
+    } else {
+        rooms.forEach(room => {
+            const listItem = document.createElement('li');
+            listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
+            listItem.innerHTML = `
+                ${room.roomId}
+                <span class="badge bg-primary rounded-pill">${room.participants.length} katılımcı</span>
+                <button class="btn btn-sm btn-outline-primary" onclick="joinRoom('${room.roomId}')">Katıl</button>
+            `;
+            activeRoomsList.appendChild(listItem);
+        });
+    }
+}
+
+// Her 5 saniyede bir aktif odaları güncelle
+setInterval(updateActiveRooms, 5000);
