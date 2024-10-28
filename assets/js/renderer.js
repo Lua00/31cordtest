@@ -1,3 +1,12 @@
+Anladım, tüm bu sorunları çözen ve istediğiniz özellikleri ekleyen güncellenmiş bir kod sunacağım. İşte HTML ve JavaScript kodlarının tam ve güncellenmiş versiyonları:
+
+```html project="Video Chat" file="index.html"
+...
+```
+
+Şimdi de güncellenmiş `renderer.js` dosyasını sunuyorum:
+
+```javascript
 let room_id;
 let local_stream;
 let screenStream;
@@ -9,6 +18,8 @@ let participants = {};
 let isMuted = false;
 let isCameraOff = false;
 
+const API_BASE_URL = window.location.origin;
+
 function createRoom() {
     nickname = document.getElementById("create-nickname-input").value;
     if (!nickname) {
@@ -19,9 +30,9 @@ function createRoom() {
     room_id = generateRoomId();
     document.getElementById("room-input").value = room_id;
     document.getElementById("room-id-display").textContent = room_id;
-    document.getElementById("current-room-id").style.display = "block";
+    document.getElementById("current-room-id").classList.remove("hidden");
     
-    fetch('/api/rooms', {
+    fetch(`${API_BASE_URL}/api/rooms`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -39,7 +50,7 @@ function createRoom() {
             console.log("Oda başarıyla oluşturuldu:", data);
             initializePeer();
             notify("Oda başarıyla oluşturuldu.");
-            bootstrap.Modal.getInstance(document.getElementById('createRoomModal')).hide();
+            closeModal('createRoomModal');
         } else {
             console.error("Oda oluşturma başarısız:", data);
             notify("Oda oluşturulamadı. Lütfen tekrar deneyin.");
@@ -64,7 +75,7 @@ function joinRoom() {
         return;
     }
 
-    fetch('/api/rooms/join', {
+    fetch(`${API_BASE_URL}/api/rooms/join`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -81,10 +92,10 @@ function joinRoom() {
         if (data.success) {
             console.log("Odaya başarıyla katılındı:", data);
             document.getElementById("room-id-display").textContent = room_id;
-            document.getElementById("current-room-id").style.display = "block";
+            document.getElementById("current-room-id").classList.remove("hidden");
             initializePeer();
             notify("Odaya başarıyla katıldınız.");
-            bootstrap.Modal.getInstance(document.getElementById('joinRoomModal')).hide();
+            closeModal('joinRoomModal');
         } else {
             console.error("Odaya katılma başarısız:", data);
             notify("Odaya katılınamadı. Lütfen geçerli bir oda ID'si girdiğinizden emin olun.");
@@ -108,7 +119,8 @@ function initializePeer() {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             local_stream = stream;
             addParticipant(nickname, stream, id);
-            document.getElementById('leave-room-btn').style.display = 'block';
+            document.getElementById('leave-room-btn').classList.remove('hidden');
+            document.getElementById('video-controls').classList.remove('hidden');
             updateActiveRooms();
             connectToExistingPeers();
         } catch (error) {
@@ -121,7 +133,7 @@ function initializePeer() {
 }
 
 function connectToExistingPeers() {
-    fetch(`/api/participants/${room_id}`)
+    fetch(`${API_BASE_URL}/api/participants/${room_id}`)
         .then(response => {
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -169,7 +181,7 @@ function addParticipant(name, stream, peerId) {
     container.id = `participant-${peerId}`;
     container.innerHTML = `
         <h5>${name}</h5>
-        <video class="w-100" controls autoplay ${peerId === peer.id ? 'muted' : ''}></video>
+        <video class="w-full h-auto" controls autoplay ${peerId === peer.id ? 'muted' : ''}></video>
     `;
     document.getElementById("participants-container").appendChild(container);
 
@@ -179,7 +191,7 @@ function addParticipant(name, stream, peerId) {
     console.log(`Participant added: ${name}, PeerID: ${peerId}`);
     console.log("Current participants:", Object.keys(participants));
 
-    fetch('/api/participants', {
+    fetch(`${API_BASE_URL}/api/participants`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -206,7 +218,7 @@ function removeParticipant(peerId) {
         console.log(`Participant removed: ${peerId}`);
         console.log("Current participants:", Object.keys(participants));
 
-        fetch(`/api/participants/${room_id}/${peerId}`, {
+        fetch(`${API_BASE_URL}/api/participants/${room_id}/${peerId}`, {
             method: 'DELETE'
         })
         .then(response => {
@@ -231,11 +243,12 @@ function leaveRoom() {
         screenStream.getTracks().forEach(track => track.stop());
     }
     document.getElementById('participants-container').innerHTML = '';
-    document.getElementById('leave-room-btn').style.display = 'none';
+    document.getElementById('leave-room-btn').classList.add('hidden');
+    document.getElementById('video-controls').classList.add('hidden');
     document.getElementById('room-input').value = '';
-    document.getElementById('current-room-id').style.display = 'none';
+    document.getElementById('current-room-id').classList.add('hidden');
     
-    fetch(`/api/rooms/${room_id}/leave`, {
+    fetch(`${API_BASE_URL}/api/rooms/${room_id}/leave`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -257,11 +270,13 @@ function leaveRoom() {
 }
 
 function notify(msg) {
-    const toastEl = document.getElementById('notification');
-    const toastBody = toastEl.querySelector('.toast-body');
-    toastBody.textContent = msg;
-    const toast = new bootstrap.Toast(toastEl);
-    toast.show();
+    const notification = document.getElementById('notification');
+    const notificationText = document.getElementById('notification-text');
+    notificationText.textContent = msg;
+    notification.classList.remove('hidden');
+    setTimeout(() => {
+        notification.classList.add('hidden');
+    }, 3000);
 }
 
 function generateRoomId() {
@@ -269,7 +284,7 @@ function generateRoomId() {
 }
 
 function updateActiveRooms() {
-    fetch('/api/rooms')
+    fetch(`${API_BASE_URL}/api/rooms`)
         .then(response => {
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -289,20 +304,87 @@ function updateActiveRoomsList(rooms) {
     const activeRoomsList = document.getElementById('active-rooms-list');
     activeRoomsList.innerHTML = '';
     if (rooms.length === 0) {
-        activeRoomsList.innerHTML = '<li class="list-group-item">Aktif oda bulunmuyor.</li>';
+        activeRoomsList.innerHTML = '<li class="px-4 py-2">Aktif oda bulunmuyor.</li>';
     } else {
         rooms.forEach(room => {
             const listItem = document.createElement('li');
-            listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
+            listItem.className = 'px-4 py-2 flex justify-between items-center';
             listItem.innerHTML = `
-                ${room.roomId}
-                <span class="badge bg-primary rounded-pill">${room.participants.length} katılımcı</span>
-                <button class="btn btn-sm btn-outline-primary" onclick="joinRoom('${room.roomId}')">Katıl</button>
+                <span>${room.roomId}</span>
+                <span class="text-sm text-gray-500">${room.participants.length} katılımcı</span>
+                <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-2 rounded text-sm" onclick="joinRoom('${room.roomId}')">Katıl</button>
             `;
             activeRoomsList.appendChild(listItem);
         });
     }
 }
 
-// Her 5 saniyede bir aktif odaları güncelle
-setInterval(updateActiveRooms, 5000);
+function toggleAudio() {
+    if (local_stream) {
+        const audioTrack = local_stream.getAudioTracks()[0];
+        if (audioTrack) {
+            audioTrack.enabled = !audioTrack.enabled;
+            isMuted = !audioTrack.enabled;
+            document.getElementById('toggle-audio').innerHTML = isMuted ? 
+                '<i class="fas fa-microphone-slash"></i> Mikrofon Aç' : 
+                '<i class="fas fa-microphone"></i> Mikrofon Kapat';
+            notify(isMuted ? "Mikrofonunuz kapatıldı." : "Mikrofonunuz açıldı.");
+        }
+    }
+}
+
+function toggleVideo() {
+    if (local_stream) {
+        const videoTrack = local_stream.getVideoTracks()[0];
+        if (videoTrack) {
+            videoTrack.enabled = !videoTrack.enabled;
+            isCameraOff = !videoTrack.enabled;
+            document.getElementById('toggle-video').innerHTML = isCameraOff ? 
+                '<i class="fas fa-video-slash"></i> Kamera Aç' : 
+                '<i class="fas fa-video"></i> Kamera Kapat';
+            notify(isCameraOff ? "Kameranız kapatıldı." : "Kameranız açıldı.");
+        }
+    }
+}
+
+async function shareScreen() {
+    if (!screenSharing) {
+        try {
+            screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            const videoTrack = screenStream.getVideoTracks()[0];
+            
+            Object.values(connections).forEach((connection) => {
+                const sender = connection.peerConnection.getSenders().find(s => s.track.kind === 'video');
+                sender.replaceTrack(videoTrack);
+            });
+
+            screenSharing = true;
+            document.getElementById('share-screen').innerHTML = '<i class="fas fa-desktop"></i> Ekran Paylaşımını Durdur';
+            notify("Ekran paylaşımı başlatıldı.");
+
+            videoTrack.onended = () => {
+                stopScreenSharing();
+            };
+        } catch (error) {
+            console.error("Ekran paylaşımı hatası:", error);
+            notify("Ekran paylaşımı başlatılamadı.");
+        }
+    } else {
+        stopScreenSharing();
+    }
+}
+
+function stopScreenSharing() {
+    if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+        screenStream = null;
+        
+        const videoTrack = local_stream.getVideoTracks()[0];
+        Object.values(connections).forEach((connection) => {
+            const sender = connection.peerConnection.getSenders().find(s => s.track.kind === 'video');
+            sender.replaceTrack(videoTrack);
+        });
+
+        screenSharing = false;
+        document.getElementById('share-screen').innerHTML
+```
