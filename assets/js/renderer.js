@@ -31,7 +31,7 @@ function createRoom() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            initializePeer(room_id);
+            initializePeer();
         } else {
             alert("Oda oluşturulamadı. Lütfen tekrar deneyin.");
         }
@@ -89,6 +89,7 @@ function initializePeer() {
             addParticipant(nickname, stream, id);
             document.getElementById('leave-room-btn').style.display = 'inline-block';
             updateActiveRooms();
+            connectToExistingPeers();
         } catch (error) {
             console.error('Medya erişimi hatası:', error);
             alert('Kamera veya mikrofona erişim sağlanamadı. Lütfen izinleri kontrol edin.');
@@ -96,6 +97,20 @@ function initializePeer() {
     });
 
     peer.on('call', handleIncomingCall);
+}
+
+function connectToExistingPeers() {
+    fetch(`/api/participants/${room_id}`)
+        .then(response => response.json())
+        .then(participants => {
+            participants.forEach(participant => {
+                if (participant.peerId !== peer.id) {
+                    const call = peer.call(participant.peerId, local_stream, { metadata: { nickname } });
+                    handleOutgoingCall(call);
+                }
+            });
+        })
+        .catch(error => console.error('Mevcut katılımcıları alma hatası:', error));
 }
 
 async function handleIncomingCall(call) {
@@ -107,6 +122,12 @@ async function handleIncomingCall(call) {
     } catch (error) {
         console.error('Gelen çağrı hatası:', error);
     }
+}
+
+function handleOutgoingCall(call) {
+    call.on('stream', (remoteStream) => {
+        addParticipant(call.metadata.nickname, remoteStream, call.peer);
+    });
 }
 
 function addParticipant(name, stream, peerId) {
@@ -129,7 +150,13 @@ function addParticipant(name, stream, peerId) {
     console.log(`Participant added: ${name}, PeerID: ${peerId}`);
     console.log("Current participants:", Object.keys(participants));
 
-    broadcastNewParticipant(name, peerId);
+    fetch('/api/participants', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ roomId: room_id, peerId: peerId, nickname: name }),
+    }).catch(error => console.error('Katılımcı ekleme hatası:', error));
 }
 
 function removeParticipant(peerId) {
@@ -176,112 +203,7 @@ function leaveRoom() {
     notify("Odadan ayrıldınız.");
 }
 
-function notify(msg) {
-    let notification = document.getElementById("notification");
-    notification.innerHTML = msg;
-    notification.hidden = false;
-    setTimeout(() => {
-        notification.hidden = true;
-    }, 3000);
-}
-
-function generateRoomId() {
-    return Math.floor(10000000 + Math.random() * 90000000).toString();
-}
-
-function updateActiveRooms() {
-    fetch('/api/rooms')
-        .then(response => response.json())
-        .then(rooms => {
-            updateActiveRoomsList(rooms);
-        })
-        .catch(error => console.error('Aktif odaları getirme hatası:', error));
-}
-
-function updateActiveRoomsList(rooms) {
-    const activeRoomsList = document.getElementById('active-rooms-list');
-    activeRoomsList.innerHTML = '';
-    rooms.forEach(room => {
-        const listItem = document.createElement('li');
-        listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
-        listItem.innerHTML = `
-            ${room.roomId}
-            <span class="badge bg-primary rounded-pill">${room.participants.length} katılımcı</span>
-            <button class="btn btn-sm btn-outline-primary" onclick="joinRoom('${room.roomId}')">Katıl</button>
-        `;
-        activeRoomsList.appendChild(listItem);
-    });
-}
-
-const darkModeToggle = document.getElementById('darkModeToggle');
-const body = document.body;
-
-darkModeToggle.addEventListener('click', () => {
-    body.classList.toggle('dark-mode');
-    body.classList.toggle('light-mode');
-});
-
-if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    body.classList.add('dark-mode');
-} else {
-    body.classList.add('light-mode');
-}
-
-function toggleMute() {
-    isMuted = !isMuted;
-    if (local_stream) {
-        local_stream.getAudioTracks().forEach(track => {
-            track.enabled = !isMuted;
-        });
-        document.getElementById("mute-btn").innerHTML = isMuted ? 
-            '<i class="fas fa-microphone-slash"></i> Sesi Aç' : 
-            '<i class="fas fa-microphone"></i> Sesi Kapat';
-    }
-}
-
-function toggleCamera() {
-    isCameraOff = !isCameraOff;
-    if (local_stream) {
-        local_stream.getVideoTracks().forEach(track => {
-            track.enabled = !isCameraOff;
-        });
-        document.getElementById("camera-btn").innerHTML = isCameraOff ? 
-            '<i class="fas fa-video-slash"></i> Kamerayı Aç' : 
-            '<i class="fas fa-video"></i> Kamerayı Kapat';
-    }
-}
-
-async function toggleScreenShare() {
-    if (!screenSharing) {
-        try {
-            screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-            for (let conn of Object.values(connections)) {
-                const sender = conn.peerConnection.getSenders().find(s => s.track.kind === 'video');
-                sender.replaceTrack(screenStream.getVideoTracks()[0]);
-            }
-            screenSharing = true;
-            document.getElementById("screen-share-btn").innerHTML = '<i class="fas fa-desktop"></i> Ekran Paylaşımını Durdur';
-        } catch (e) {
-            console.error("Ekran paylaşımı başlatılamadı:", e);
-        }
-    } else {
-        screenStream.getTracks().forEach(track => track.stop());
-        for (let conn of Object.values(connections)) {
-            const sender = conn.peerConnection.getSenders().find(s => s.track.kind === 'video');
-            sender.replaceTrack(local_stream.getVideoTracks()[0]);
-        }
-        screenSharing = false;
-        document.getElementById("screen-share-btn").innerHTML = '<i class="fas fa-desktop"></i> Ekran Paylaş';
-    }
-}
-
-function broadcastNewParticipant(name, peerId) {
-    for (let conn of Object.values(connections)) {
-        if (conn.open) {
-            conn.send(JSON.stringify({ type: 'newParticipant', data: { name, peerId } }));
-        }
-    }
-}
+// Diğer fonksiyonlar aynı kalacak...
 
 // Her 5 saniyede bir aktif odaları güncelle
 setInterval(updateActiveRooms, 5000);
