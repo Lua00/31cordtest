@@ -9,13 +9,10 @@ let participants = {};
 let isMuted = false;
 let isCameraOff = false;
 
-// API base URL'sini tanımlayalım
-const API_BASE_URL = window.location.origin;
-
 function createRoom() {
-    nickname = document.getElementById("nickname-input").value;
+    nickname = document.getElementById("create-nickname-input").value;
     if (!nickname) {
-        alert("Lütfen takma adınızı girin.");
+        notify("Lütfen takma adınızı girin.");
         return;
     }
 
@@ -24,7 +21,7 @@ function createRoom() {
     document.getElementById("room-id-display").textContent = room_id;
     document.getElementById("current-room-id").style.display = "block";
     
-    fetch(`${API_BASE_URL}/api/rooms`, {
+    fetch('/api/rooms', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -41,31 +38,33 @@ function createRoom() {
         if (data.success) {
             console.log("Oda başarıyla oluşturuldu:", data);
             initializePeer();
+            notify("Oda başarıyla oluşturuldu.");
+            bootstrap.Modal.getInstance(document.getElementById('createRoomModal')).hide();
         } else {
             console.error("Oda oluşturma başarısız:", data);
-            alert("Oda oluşturulamadı. Lütfen tekrar deneyin.");
+            notify("Oda oluşturulamadı. Lütfen tekrar deneyin.");
         }
     })
     .catch(error => {
         console.error('Oda oluşturma hatası:', error);
-        alert("Oda oluşturulurken bir hata oluştu. Lütfen tekrar deneyin.");
+        notify("Oda oluşturulurken bir hata oluştu. Lütfen tekrar deneyin.");
     });
 }
 
 function joinRoom() {
-    nickname = document.getElementById("nickname-input").value;
+    nickname = document.getElementById("join-nickname-input").value;
     if (!nickname) {
-        alert("Lütfen takma adınızı girin.");
+        notify("Lütfen takma adınızı girin.");
         return;
     }
 
     room_id = document.getElementById("room-input").value;
     if (!room_id || !/^\d{8,}$/.test(room_id)) {
-        alert("Lütfen geçerli bir oda ID'si girin (en az 8 rakam).");
+        notify("Lütfen geçerli bir oda ID'si girin (en az 8 rakam).");
         return;
     }
 
-    fetch(`${API_BASE_URL}/api/rooms/join`, {
+    fetch('/api/rooms/join', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -84,21 +83,22 @@ function joinRoom() {
             document.getElementById("room-id-display").textContent = room_id;
             document.getElementById("current-room-id").style.display = "block";
             initializePeer();
+            notify("Odaya başarıyla katıldınız.");
+            bootstrap.Modal.getInstance(document.getElementById('joinRoomModal')).hide();
         } else {
             console.error("Odaya katılma başarısız:", data);
-            alert("Odaya katılınamadı. Lütfen geçerli bir oda ID'si girdiğinizden emin olun.");
+            notify("Odaya katılınamadı. Lütfen geçerli bir oda ID'si girdiğinizden emin olun.");
         }
     })
     .catch(error => {
         console.error('Odaya katılma hatası:', error);
-        alert("Odaya katılırken bir hata oluştu. Lütfen tekrar deneyin.");
+        notify("Odaya katılırken bir hata oluştu. Lütfen tekrar deneyin.");
     });
 }
 
 function initializePeer() {
     peer = new Peer(undefined, {
-        host: window.location.hostname,
-        port: window.location.port || (window.location.protocol === 'https:' ? 443 : 80),
+        host: '/',
         path: '/peerjs'
     });
 
@@ -108,12 +108,12 @@ function initializePeer() {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             local_stream = stream;
             addParticipant(nickname, stream, id);
-            document.getElementById('leave-room-btn').style.display = 'inline-block';
+            document.getElementById('leave-room-btn').style.display = 'block';
             updateActiveRooms();
             connectToExistingPeers();
         } catch (error) {
             console.error('Medya erişimi hatası:', error);
-            alert('Kamera veya mikrofona erişim sağlanamadı. Lütfen izinleri kontrol edin.');
+            notify('Kamera veya mikrofona erişim sağlanamadı. Lütfen izinleri kontrol edin.');
         }
     });
 
@@ -121,7 +121,7 @@ function initializePeer() {
 }
 
 function connectToExistingPeers() {
-    fetch(`${API_BASE_URL}/api/participants/${room_id}`)
+    fetch(`/api/participants/${room_id}`)
         .then(response => {
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -165,9 +165,12 @@ function addParticipant(name, stream, peerId) {
     }
 
     let container = document.createElement("div");
-    container.className = "col-4 pt-4";
+    container.className = "participant-video";
     container.id = `participant-${peerId}`;
-    container.innerHTML = `<h5>${name}</h5><video height="200" controls autoplay ${peerId === peer.id ? 'muted' : ''}></video>`;
+    container.innerHTML = `
+        <h5>${name}</h5>
+        <video class="w-100" controls autoplay ${peerId === peer.id ? 'muted' : ''}></video>
+    `;
     document.getElementById("participants-container").appendChild(container);
 
     let video = container.querySelector("video");
@@ -176,7 +179,7 @@ function addParticipant(name, stream, peerId) {
     console.log(`Participant added: ${name}, PeerID: ${peerId}`);
     console.log("Current participants:", Object.keys(participants));
 
-    fetch(`${API_BASE_URL}/api/participants`, {
+    fetch('/api/participants', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -203,7 +206,7 @@ function removeParticipant(peerId) {
         console.log(`Participant removed: ${peerId}`);
         console.log("Current participants:", Object.keys(participants));
 
-        fetch(`${API_BASE_URL}/api/participants/${room_id}/${peerId}`, {
+        fetch(`/api/participants/${room_id}/${peerId}`, {
             method: 'DELETE'
         })
         .then(response => {
@@ -232,7 +235,7 @@ function leaveRoom() {
     document.getElementById('room-input').value = '';
     document.getElementById('current-room-id').style.display = 'none';
     
-    fetch(`${API_BASE_URL}/api/rooms/${room_id}/leave`, {
+    fetch(`/api/rooms/${room_id}/leave`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -254,12 +257,11 @@ function leaveRoom() {
 }
 
 function notify(msg) {
-    let notification = document.getElementById("notification");
-    notification.innerHTML = msg;
-    notification.hidden = false;
-    setTimeout(() => {
-        notification.hidden = true;
-    }, 3000);
+    const toastEl = document.getElementById('notification');
+    const toastBody = toastEl.querySelector('.toast-body');
+    toastBody.textContent = msg;
+    const toast = new bootstrap.Toast(toastEl);
+    toast.show();
 }
 
 function generateRoomId() {
@@ -267,9 +269,9 @@ function generateRoomId() {
 }
 
 function updateActiveRooms() {
-    fetch(`${API_BASE_URL}/api/rooms`)
+    fetch('/api/rooms')
         .then(response => {
-            if  (!response.ok) {
+            if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             return response.json();
