@@ -9,6 +9,9 @@ let participants = {};
 let isMuted = false;
 let isCameraOff = false;
 
+// API base URL'sini tanımlayalım
+const API_BASE_URL = window.location.origin;
+
 function createRoom() {
     nickname = document.getElementById("nickname-input").value;
     if (!nickname) {
@@ -21,7 +24,7 @@ function createRoom() {
     document.getElementById("room-id-display").textContent = room_id;
     document.getElementById("current-room-id").style.display = "block";
     
-    fetch('/api/rooms', {
+    fetch(`${API_BASE_URL}/api/rooms`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -62,7 +65,7 @@ function joinRoom() {
         return;
     }
 
-    fetch('/api/rooms/join', {
+    fetch(`${API_BASE_URL}/api/rooms/join`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -94,7 +97,8 @@ function joinRoom() {
 
 function initializePeer() {
     peer = new Peer(undefined, {
-        host: '/',
+        host: window.location.hostname,
+        port: window.location.port || (window.location.protocol === 'https:' ? 443 : 80),
         path: '/peerjs'
     });
 
@@ -117,7 +121,7 @@ function initializePeer() {
 }
 
 function connectToExistingPeers() {
-    fetch(`/api/participants/${room_id}`)
+    fetch(`${API_BASE_URL}/api/participants/${room_id}`)
         .then(response => {
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -172,7 +176,7 @@ function addParticipant(name, stream, peerId) {
     console.log(`Participant added: ${name}, PeerID: ${peerId}`);
     console.log("Current participants:", Object.keys(participants));
 
-    fetch('/api/participants', {
+    fetch(`${API_BASE_URL}/api/participants`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -185,8 +189,7 @@ function addParticipant(name, stream, peerId) {
         }
         return response.json();
     })
-    .then(data => 
- console.log('Katılımcı başarıyla eklendi:', data))
+    .then(data => console.log('Katılımcı başarıyla eklendi:', data))
     .catch(error => console.error('Katılımcı ekleme hatası:', error));
 }
 
@@ -200,7 +203,7 @@ function removeParticipant(peerId) {
         console.log(`Participant removed: ${peerId}`);
         console.log("Current participants:", Object.keys(participants));
 
-        fetch(`/api/participants/${room_id}/${peerId}`, {
+        fetch(`${API_BASE_URL}/api/participants/${room_id}/${peerId}`, {
             method: 'DELETE'
         })
         .then(response => {
@@ -229,7 +232,7 @@ function leaveRoom() {
     document.getElementById('room-input').value = '';
     document.getElementById('current-room-id').style.display = 'none';
     
-    fetch(`/api/rooms/${room_id}/leave`, {
+    fetch(`${API_BASE_URL}/api/rooms/${room_id}/leave`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -264,9 +267,9 @@ function generateRoomId() {
 }
 
 function updateActiveRooms() {
-    fetch('/api/rooms')
+    fetch(`${API_BASE_URL}/api/rooms`)
         .then(response => {
-            if (!response.ok) {
+            if  (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             return response.json();
@@ -285,21 +288,4 @@ function updateActiveRoomsList(rooms) {
     activeRoomsList.innerHTML = '';
     if (rooms.length === 0) {
         activeRoomsList.innerHTML = '<li class="list-group-item">Aktif oda bulunmuyor.</li>';
-    } else {
-        rooms.forEach(room => {
-            const listItem = document.createElement('li');
-            listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
-            listItem.innerHTML = `
-                ${room.roomId}
-                <span class="badge bg-primary rounded-pill">${room.participants.length} katılımcı</span>
-                <button class="btn btn-sm btn-outline-primary" onclick="joinRoom('${room.roomId}')">Katıl</button>
-            `;
-            activeRoomsList.appendChild(listItem);
-        });
-    }
-}
-
-// Diğer fonksiyonlar (toggleMute, toggleCamera, toggleScreenShare) aynı kalacak...
-
-// Her 5 saniyede bir aktif odaları güncelle
-setInterval(updateActiveRooms, 5000);
+    } 
