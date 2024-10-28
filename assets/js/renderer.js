@@ -195,6 +195,7 @@ function removeParticipant(peerId) {
         if (participantDiv) {
             participantDiv.remove();
         }
+        
         delete participants[peerId];
         console.log(`Participant removed: ${peerId}`);
         console.log("Current participants:", Object.keys(participants));
@@ -273,22 +274,29 @@ function updateActiveRooms() {
         .then(rooms => {
             updateActiveRoomsList(rooms);
         })
-        .catch(error => console.error('Aktif odaları getirme hatası:', error));
+        .catch(error => {
+            console.error('Aktif odaları getirme hatası:', error);
+            document.getElementById('active-rooms-list').innerHTML = '<li class="list-group-item">Odalar yüklenirken bir hata oluştu.</li>';
+        });
 }
 
 function updateActiveRoomsList(rooms) {
     const activeRoomsList = document.getElementById('active-rooms-list');
     activeRoomsList.innerHTML = '';
-    rooms.forEach(room => {
-        const listItem = document.createElement('li');
-        listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
-        listItem.innerHTML = `
-            ${room.roomId}
-            <span class="badge bg-primary rounded-pill">${room.participants.length} katılımcı</span>
-            <button class="btn btn-sm btn-outline-primary" onclick="joinRoom('${room.roomId}')">Katıl</button>
-        `;
-        activeRoomsList.appendChild(listItem);
-    });
+    if (rooms.length === 0) {
+        activeRoomsList.innerHTML = '<li class="list-group-item">Aktif oda bulunmuyor.</li>';
+    } else {
+        rooms.forEach(room => {
+            const listItem = document.createElement('li');
+            listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
+            listItem.innerHTML = `
+                ${room.roomId}
+                <span class="badge bg-primary rounded-pill">${room.participants.length} katılımcı</span>
+                <button class="btn btn-sm btn-outline-primary" onclick="joinRoom('${room.roomId}')">Katıl</button>
+            `;
+            activeRoomsList.appendChild(listItem);
+        });
+    }
 }
 
 // Diğer fonksiyonlar (toggleMute, toggleCamera, toggleScreenShare) aynı kalacak...
