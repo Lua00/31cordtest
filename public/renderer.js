@@ -9,8 +9,6 @@ let participants = {};
 let isMuted = false;
 let isCameraOff = false;
 
-
-
 const socket = io('/');
 
 const API_BASE_URL = window.location.origin;
@@ -23,7 +21,6 @@ function createRoom() {
     }
 
     room_id = generateRoomId();
-    document.getElementById("room-input").value = room_id;
     document.getElementById("room-id-display").textContent = room_id;
     document.getElementById("current-room-id").classList.remove("hidden");
     
@@ -65,8 +62,8 @@ function joinRoom() {
     }
 
     room_id = document.getElementById("room-input").value;
-    if (!room_id || !/^\d{8,}$/.test(room_id)) {
-        notify("Lütfen geçerli bir oda ID'si girin (en az 8 rakam).");
+    if (!room_id) {
+        notify("Lütfen bir oda ID'si girin.");
         return;
     }
 
@@ -176,7 +173,7 @@ function addParticipant(name, stream, peerId) {
     container.id = `participant-${peerId}`;
     container.innerHTML = `
         <h5>${name}</h5>
-        <video class="w-full h-auto" controls autoplay ${peerId === peer.id ? 'muted' : ''}></video>
+        <video class="w-full h-auto" autoplay ${peerId === peer.id ? 'muted' : ''}></video>
     `;
     document.getElementById("participants-container").appendChild(container);
 
@@ -240,7 +237,6 @@ function leaveRoom() {
     document.getElementById('participants-container').innerHTML = '';
     document.getElementById('leave-room-btn').classList.add('hidden');
     document.getElementById('video-controls').classList.add('hidden');
-    document.getElementById('room-input').value = '';
     document.getElementById('current-room-id').classList.add('hidden');
     
     fetch(`${API_BASE_URL}/api/rooms/${room_id}/leave`, {
@@ -291,7 +287,7 @@ function updateActiveRooms() {
         })
         .catch(error => {
             console.error('Aktif odaları getirme hatası:', error);
-            document.getElementById('active-rooms-list').innerHTML = '<li class="list-group-item">Odalar yüklenirken bir hata oluştu.</li>';
+            document.getElementById('active-rooms-list').innerHTML = '<li class="px-4 py-2">Odalar yüklenirken bir hata oluştu.</li>';
         });
 }
 
@@ -307,11 +303,16 @@ function updateActiveRoomsList(rooms) {
             listItem.innerHTML = `
                 <span>${room.roomId}</span>
                 <span class="text-sm text-gray-500">${room.participants.length} katılımcı</span>
-                <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-2 rounded text-sm" onclick="joinRoom('${room.roomId}')">Katıl</button>
+                <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-2 rounded text-sm" onclick="joinExistingRoom('${room.roomId}')">Katıl</button>
             `;
             activeRoomsList.appendChild(listItem);
         });
     }
+}
+
+function joinExistingRoom(roomId) {
+    document.getElementById('room-input').value = roomId;
+    document.getElementById('joinRoomModal').classList.remove('hidden');
 }
 
 function toggleAudio() {
